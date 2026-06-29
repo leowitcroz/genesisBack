@@ -15,11 +15,14 @@ async function bootstrap() {
     origin: [
       'http://localhost:5173', 
       /^http:\/\/(.*)\.localhost:5173$/,
-      /^https:\/\/(.*)\.genesis\.com$/ 
+      /^https:\/\/(.*)\.genesis\.com$/,
+      // 👇 Adicionado o domínio principal e subdomínios da wsdigital
+      'https://wsdigital.app.br',
+      /^https:\/\/(.*)\.wsdigital\.app\.br$/
     ], 
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-    credentials: true, // Permite o envio de cookies/headers customizados (essencial para o nosso SaaS)
-    allowedHeaders: 'Content-Type, Accept, Authorization, x-tenant-id', // Libera o nosso header do SaaS!
+    credentials: true, // Permite o envio de cookies/headers customizados
+    allowedHeaders: 'Content-Type, Accept, Authorization, x-tenant-id',
   });
 
   await app.listen(3000);
