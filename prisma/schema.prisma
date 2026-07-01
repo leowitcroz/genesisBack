@@ -11,6 +11,21 @@ datasource db {
 // 1. GERENCIAMENTO DO SAAS (MULTI-TENANT) E PLANOS
 // ==========================================
 
+model CentroCusto {
+  id          String   @id @default(uuid())
+  tenantId    String
+  nome        String   // Ex: "Mesa 04", "Fiat Bravo (ABC-1234)", "Venda Casa Condomínio X"
+  tipo        String?  // Ex: "MESA", "VEICULO", "IMOVEL", "PROJETO", "GERAL"
+  status      String   @default("ATIVO") // ATIVO, FINALIZADO, CANCELADO
+  createdAt   DateTime @default(now())
+
+  // Relacionamentos genéricos
+  despesas    Despesa[]
+  entradas    Entrada[]
+  
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+}
+
 model Tenant {
   id                 String   @id @default(uuid())
   subdomain          String   @unique // ex: 'mercado', 'oficina'
@@ -45,8 +60,32 @@ model Tenant {
   assinaturas      AssinaturaCliente[]
   avaliacoes       Avaliacao[]
   indicacoes       Indicacao[]
+  faturasSaaS      FaturaSaaS[]
   auditorias       Auditoria[]
   disponibilidades Disponibilidade[]
+  entradas Entrada[]
+  centrosCusto CentroCusto[]
+}
+
+
+
+model Entrada {
+  id          String   @id @default(uuid())
+  description String
+  amount      Decimal  @db.Decimal(10, 2)
+  date        DateTime
+  isPaid      Boolean  @default(true) // Verdadeiro se o dinheiro já caiu na conta
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  centroCustoId String?
+  centroCusto   CentroCusto? @relation(fields: [centroCustoId], references: [id])
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([date])
+  @@index([tenantId])
 }
 
 enum PlanoSaaS {
@@ -69,6 +108,24 @@ model PlanoAssinatura {
   // Relacionamentos Reversos
   assinaturas AssinaturaCliente[]
   servicos    Servico[]
+}
+
+
+model FaturaSaaS {
+  id             String   @id @default(uuid())
+  valor          Decimal  @db.Decimal(10, 2)
+  status         String   @default("PENDENTE") // Ex: PENDENTE, PAGO, ATRASADO
+  dataInicio     DateTime @default(now())
+  dataVencimento DateTime
+  dataPagamento  DateTime?
+
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([tenantId])
 }
 
 // ==========================================
@@ -280,6 +337,10 @@ model Despesa {
   isPaid      Boolean     @default(false)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
+
+  centroCustoId String?
+  centroCusto   CentroCusto? @relation(fields: [centroCustoId], references: [id])
+
 
   tenantId String
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)

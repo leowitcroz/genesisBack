@@ -19,12 +19,22 @@ export class TenantService {
       throw new ConflictException('Este subdomínio já está sendo utilizado por outra loja.');
     }
 
-    const emailExist = await this.prisma.funcionario.findFirst({
+    // Verifica se o e-mail já existe na tabela de funcionários (barbeiros/admins)
+    const emailFuncionarioExist = await this.prisma.funcionario.findFirst({
       where: { email: emailFormatado },
     });
 
-    if (emailExist) {
+    if (emailFuncionarioExist) {
       throw new ConflictException('Este e-mail já está cadastrado como administrador de uma loja.');
+    }
+
+    // Verifica se o e-mail já existe na tabela de clientes
+    const emailClienteExist = await this.prisma.cliente.findFirst({
+      where: { email: emailFormatado },
+    });
+
+    if (emailClienteExist) {
+      throw new ConflictException('Este e-mail já está cadastrado no sistema por um cliente.');
     }
 
     try {
@@ -37,9 +47,8 @@ export class TenantService {
             subdomain: subdomainFormatado,
             nomeNegocio: dados.nomeNegocio,
             ativo: true,
-            // Módulos iniciais que toda barbearia ganha ao registrar
             moduloAgendamento: true, 
-            moduloFinanceiro: true, // Deixamos ativo para eles testarem os mocks!
+            moduloFinanceiro: true, 
             moduloAssinaturas: false,
             moduloVendas: false,
             moduloProdutos: false,
@@ -62,9 +71,25 @@ export class TenantService {
           },
         });
 
+        // 🟢 D. Cria o primeiro registro de Renovação/Mensalidade para o Painel Master
+        const dataInicio = new Date();
+        const dataVencimento = new Date();
+        dataVencimento.setDate(dataVencimento.getDate() + 30); // Vencimento para 30 dias
+
+        // 👇 Correção aqui: usando faturaSaaS em vez de renovacao
+        const primeiraFatura = await tx.faturaSaaS.create({
+          data: {
+            tenantId: novoTenant.id,
+            valor: dados.valorPlano || 99.90,
+            status: 'PENDENTE',
+            dataInicio: dataInicio,
+            dataVencimento: dataVencimento,
+          },
+        });
+
         return {
           sucesso: true,
-          message: 'Loja e administrador configurados com sucesso!',
+          message: 'Loja, administrador e controle financeiro configurados com sucesso!',
           loja: {
             id: novoTenant.id,
             nomeNegocio: novoTenant.nomeNegocio,
@@ -74,6 +99,12 @@ export class TenantService {
             id: donoAdmin.id,
             email: donoAdmin.email,
           },
+          financeiroInicial: {
+            id: primeiraFatura.id,
+            valor: primeiraFatura.valor,
+            status: primeiraFatura.status,
+            vencimento: primeiraFatura.dataVencimento,
+          }
         };
       });
     } catch (error) {
