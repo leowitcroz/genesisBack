@@ -197,11 +197,16 @@ model Produto {
   valor   Decimal     @db.Decimal(10, 2)
   estoque Int         @default(0)
   tipo    TipoProduto @default(PRODUTO)
+  caracteristicas Json?
+  despesas        Despesa[]
+  itensVenda       ItemVenda[]
 
   tenantId String
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  @@unique([nome, tenantId])
+  // @@unique([nome, tenantId])
 }
 
 enum TipoProduto {
@@ -228,6 +233,9 @@ model ItemVenda {
 
   agendamentoId Int?
   agendamento   Agendamento? @relation(fields: [agendamentoId], references: [id])
+
+  produtoId Int?
+  produto   Produto? @relation(fields: [produtoId], references: [id])
 
   @@index([clienteId])
   @@index([funcionarioId])
@@ -340,6 +348,9 @@ model Despesa {
 
   centroCustoId String?
   centroCusto   CentroCusto? @relation(fields: [centroCustoId], references: [id])
+
+  produtoId     Int?
+  produto       Produto? @relation(fields: [produtoId], references: [id], onDelete: Cascade)
 
 
   tenantId String

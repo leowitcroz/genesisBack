@@ -33,4 +33,10 @@ export class TenantController {
 
     return tenant;
   }
+
+  @IsPublic()
+  @Get(':id/plano')
+  async getTenantPlano(@Param('id') id: string) {
+    return this.tenantService.obterPlanoPorId(id);
+  }
 }

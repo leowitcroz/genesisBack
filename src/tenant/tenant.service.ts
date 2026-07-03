@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, ConflictException, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 
@@ -111,5 +111,18 @@ export class TenantService {
       if (error instanceof ConflictException) throw error;
       throw new InternalServerErrorException('Erro crítico ao criar a estrutura da loja no banco.');
     }
+  }
+
+  async obterPlanoPorId(id: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id },
+    });
+
+    if (!tenant) {
+      throw new NotFoundException('Estabelecimento não encontrado.');
+    }
+
+    // Retorna todos os dados do tenant, incluindo os booleanos dos módulos (moduloFinanceiro, moduloAgendamento, etc)
+    return tenant;
   }
 }

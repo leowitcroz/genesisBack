@@ -6,88 +6,137 @@ import {
   Delete, 
   Body, 
   Param, 
+  Query, 
   UseGuards, 
-  ParseIntPipe, 
-  Query
+  ParseIntPipe 
 } from '@nestjs/common';
 import { ProdutosService } from './produtos.service';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { TenantId } from '../tenant/tenant.decorator';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { SaasFeatureGuard } from '../guard/saas-feature.guard';
+import { RequireFeatures } from '../decorator/require-features.decorator';
+import { SaasFeature } from '../auth/saas-features.enum';
 import { TipoProduto } from '@prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, SaasFeatureGuard)
+@RequireFeatures(SaasFeature.PRODUTOS) // Garante que a loja tem o plano com Produtos ativado
 @Controller('produtos')
 export class ProdutosController {
-  constructor(private readonly produtosService: ProdutosService, private prisma: PrismaService) {}
+  constructor(private readonly produtosService: ProdutosService) {}
 
-  @Get('item-venda')
-  async listarVendas(
-    @TenantId() tenantId: string,
-    @Query('inicio') inicio?: string,
-    @Query('fim') fim?: string,
-  ) {
-    const whereClause: any = { tenantId };
-
-    if (inicio || fim) {
-      whereClause.dataVenda = {};
-      // Blindagem de Fuso Horário igual fizemos no Resumo Financeiro
-      if (inicio) whereClause.dataVenda.gte = new Date(inicio + 'T00:00:00-03:00');
-      if (fim) whereClause.dataVenda.lte = new Date(fim + 'T23:59:59-03:00');
-    }
-
-    return await this.prisma.itemVenda.findMany({
-      where: whereClause,
-      include: {
-        funcionario: { select: { nome: true } } // Traz o nome do Vendedor
-      },
-      orderBy: { dataVenda: 'desc' }
-    });
-  }
-
-
+  // =========================================================================
+  // CRIAR PRODUTO / ESTOQUE COMPLEXO
+  // =========================================================================
   @Post()
-  async criar(
+  async criarProduto(
     @TenantId() tenantId: string,
-    @Body() dados: { nome: string; valor: number; estoque?: number; tipo: TipoProduto }
+    @Body() body: { 
+      nome: string; 
+      valor: number; 
+      estoque?: number; 
+      tipo: TipoProduto; 
+      caracteristicas?: any 
+    }
   ) {
-    return this.produtosService.criar(tenantId, dados);
+    return this.produtosService.criar(tenantId, body);
   }
 
+  // =========================================================================
+  // LISTAR TODOS OS PRODUTOS
+  // =========================================================================
   @Get()
-  async listarTodos(@TenantId() tenantId: string) {
+  async listarProdutos(@TenantId() tenantId: string) {
     return this.produtosService.listarTodos(tenantId);
   }
 
-  @Post('venda')
-  async vender(
-    @TenantId() tenantId: string,
-    @Body() dados: { 
-        produtoId: number; 
-        funcionarioId: number; 
-        nomeItem: string; 
-        tipoOrigem: TipoProduto; 
-        quantidade: number; 
-        valorUnitario: number; 
-    }
-  ) {
-    return this.produtosService.realizarVenda(tenantId, dados);
-  }
-
+  // =========================================================================
+  // ATUALIZAR PRODUTO / ATRIBUTOS / ESTOQUE
+  // =========================================================================
   @Put(':id')
-  async atualizar(
+  async atualizarProduto(
     @TenantId() tenantId: string,
     @Param('id', ParseIntPipe) id: number,
-    @Body() dados: { nome?: string; valor?: number; estoque?: number; tipo?: TipoProduto }
+    @Body() body: { 
+      nome?: string; 
+      valor?: number; 
+      estoque?: number; 
+      tipo?: TipoProduto; 
+      caracteristicas?: any 
+    }
   ) {
-    return this.produtosService.atualizar(tenantId, id, dados);
+    return this.produtosService.atualizar(tenantId, id, body);
   }
 
+  // =========================================================================
+  // EXCLUIR PRODUTO
+  // =========================================================================
   @Delete(':id')
-  async deletar(
+  async deletarProduto(
     @TenantId() tenantId: string,
     @Param('id', ParseIntPipe) id: number
   ) {
     return this.produtosService.deletar(tenantId, id);
+  }
+
+  // =========================================================================
+  // REALIZAR VENDA (INTEGRADO AO DRE / COMANDA)
+  // =========================================================================
+  @Post('venda')
+  async realizarVenda(
+    @TenantId() tenantId: string,
+    @Body() body: { 
+      produtoId: number;
+      funcionarioId: string | number; 
+      nomeItem: string; 
+      tipoOrigem: TipoProduto; 
+      quantidade: number; 
+      valorUnitario: number; 
+      formaPagamento: string;
+      centroCustoId?: string; // Opcional: Vai para o DRE se preenchido
+    }
+  ) {
+    return this.produtosService.realizarVenda(tenantId, {
+      produtoId: Number(body.produtoId),
+      funcionarioId: Number(body.funcionarioId),
+      nomeItem: body.nomeItem,
+      tipoOrigem: body.tipoOrigem,
+      quantidade: Number(body.quantidade),
+      valorUnitario: Number(body.valorUnitario),
+      formaPagamento: body.formaPagamento,
+      centroCustoId: body.centroCustoId
+    });
+  }
+
+  // =========================================================================
+  // HISTÓRICO DE VENDAS
+  // =========================================================================
+  @Get('item-venda')
+  async listarHistoricoVendas(
+    @TenantId() tenantId: string,
+    @Query('inicio') inicio?: string,
+    @Query('fim') fim?: string
+  ) {
+    // Utilizando o Prisma diretamente aqui para facilitar, ou você pode mover para o Service
+    const dataInicio = inicio ? new Date(inicio + 'T00:00:00-03:00') : new Date();
+    const dataFim = fim ? new Date(fim + 'T23:59:59-03:00') : new Date();
+
+    if (!inicio) dataInicio.setHours(0, 0, 0, 0);
+    if (!fim) dataFim.setHours(23, 59, 59, 999);
+
+    return this.produtosService['prisma'].itemVenda.findMany({
+      where: {
+        tenantId,
+        dataVenda: {
+          gte: dataInicio,
+          lte: dataFim,
+        },
+      },
+      include: {
+        funcionario: {
+          select: { nome: true }
+        }
+      },
+      orderBy: { dataVenda: 'desc' }
+    });
   }
 }

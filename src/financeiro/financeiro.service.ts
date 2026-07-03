@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ExpenseType } from '@prisma/client';
 
@@ -82,16 +82,19 @@ export class FinanceiroService {
     // =========================================================================
     // 1. DESPESAS E ENTRADAS MANUAIS
     // =========================================================================
-    async criarDespesaVariavel(tenantId: string, data: { description: string; amount: number; date: string | Date; isPaid?: boolean; centroCustoId?: string }) {
+    async criarDespesaVariavel(tenantId: string, data: any) {
         return await this.prisma.despesa.create({
             data: {
                 tenantId,
-                centroCustoId: data.centroCustoId,
                 description: data.description,
-                amount: data.amount,
+                amount: Number(data.amount),
                 date: this.normalizarDataParaMeioDia(data.date),
                 type: ExpenseType.VARIABLE,
-                isPaid: data.isPaid || false
+                isPaid: data.isPaid !== undefined ? data.isPaid : true,
+
+                // O VÍNCULO OCORRE AQUI:
+                produtoId: data.produtoId ? Number(data.produtoId) : null,
+                centroCustoId: data.centroCustoId || null
             }
         });
     }
@@ -211,10 +214,10 @@ export class FinanceiroService {
         return await this.prisma.$transaction(async (tx) => {
             // 1. Limpa todas as receitas vinculadas a essa comanda
             await tx.entrada.deleteMany({ where: { centroCustoId: id } });
-            
+
             // 2. Limpa todos os custos vinculados a essa comanda
             await tx.despesa.deleteMany({ where: { centroCustoId: id } });
-            
+
             // 3. Exclui a comanda em si
             return await tx.centroCusto.delete({ where: { id } });
         });
@@ -227,9 +230,9 @@ export class FinanceiroService {
             distinct: ['tipo'],
             select: { tipo: true }
         });
-        
+
         const tipos = categorias.map(c => c.tipo).filter(t => t.trim() !== '');
-        
+
         // Se a loja for nova e não tiver nada, devolvemos um padrão genérico
         return tipos.length > 0 ? tipos : ['GERAL', 'PROJETO'];
     }
@@ -277,14 +280,46 @@ export class FinanceiroService {
     }
 
     async atualizarEntrada(tenantId: string, id: string, dados: any) {
-        const exists = await this.prisma.entrada.findUnique({ where: { id, tenantId } });
-        if (!exists) throw new NotFoundException('Entrada não encontrada.');
+        // 1. Roteamento para Vendas de Produtos (ID numérico)
+        if (id.startsWith('venda-')) {
+            const realId = parseInt(id.replace('venda-', ''), 10);
+            return await this.prisma.itemVenda.update({
+                where: { id: realId },
+                data: {
+                    ...(dados.amount !== undefined && { valorUnitario: dados.amount })
+                }
+            });
+        }
 
-        return this.prisma.entrada.update({
-            where: { id },
+        // 2. Roteamento para Agendamentos (ID numérico)
+        if (id.startsWith('agend-')) {
+            const realId = parseInt(id.replace('agend-', ''), 10);
+            // Atualize conforme os campos que você permite editar em um agendamento concluído
+            return await this.prisma.agendamento.update({
+                where: { id: realId },
+                data: {
+                    ...(dados.amount !== undefined && { valor: dados.amount })
+                }
+            });
+        }
+
+        // 3. Roteamento para Entradas Manuais (ID em formato UUID string)
+        // Remove o prefixo se existir, ou assume que é o ID limpo
+        const realId = id.replace('manual-', '');
+
+        const exists = await this.prisma.entrada.findUnique({
+            where: { id: realId, tenantId }
+        });
+
+        if (!exists) {
+            throw new NotFoundException('Entrada manual não encontrada.');
+        }
+
+        return await this.prisma.entrada.update({
+            where: { id: realId },
             data: {
                 ...(dados.description !== undefined && { description: dados.description }),
-                ...(dados.amount !== undefined && { amount: dados.amount }),
+                ...(dados.amount !== undefined && { amount: Number(dados.amount) }),
                 ...(dados.date !== undefined && { date: this.normalizarDataParaMeioDia(dados.date) }),
                 ...(dados.isPaid !== undefined && { isPaid: dados.isPaid }),
                 ...(dados.centroCustoId !== undefined && { centroCustoId: dados.centroCustoId }),
@@ -293,10 +328,35 @@ export class FinanceiroService {
     }
 
     async deletarEntrada(tenantId: string, id: string) {
-        const exists = await this.prisma.entrada.findUnique({ where: { id, tenantId } });
-        if (!exists) throw new NotFoundException('Entrada não encontrada.');
-        return await this.prisma.entrada.delete({ where: { id } });
+    // 1. Cancelamento de Venda de Produto/Consumível
+    if (id.startsWith('venda-')) {
+        const realId = parseInt(id.replace('venda-', ''), 10);
+        const venda = await this.prisma.itemVenda.findFirst({ where: { id: realId, tenantId } });
+        if (!venda) throw new NotFoundException('Venda não encontrada.');
+
+        return await this.prisma.$transaction(async (tx) => {
+            // Devolve o item pro estoque, se ele estiver vinculado a um produto cadastrado
+            if (venda.produtoId) {
+                await tx.produto.update({
+                    where: { id: venda.produtoId },
+                    data: { estoque: { increment: venda.quantidade } }
+                });
+            }
+            return await tx.itemVenda.delete({ where: { id: realId } });
+        });
     }
+
+    // 2. Agendamentos concluídos não são cancelados por essa rota
+    if (id.startsWith('agend-')) {
+        throw new BadRequestException('Para cancelar um serviço concluído, use o módulo de Agenda.');
+    }
+
+    // 3. Entrada Manual (padrão) — precisa remover o prefixo antes de buscar, senão nunca acha
+    const realId = id.replace('manual-', '');
+    const exists = await this.prisma.entrada.findUnique({ where: { id: realId, tenantId } });
+    if (!exists) throw new NotFoundException('Entrada não encontrada.');
+    return await this.prisma.entrada.delete({ where: { id: realId } });
+}
 
     async listarEntradas(tenantId: string, filters: { startDate: Date; endDate: Date }) {
         return await this.prisma.entrada.findMany({
@@ -321,8 +381,16 @@ export class FinanceiroService {
     // =========================================================================
     async obterResumoFinanceiro(tenantId: string, startDate?: string, endDate?: string) {
         const hoje = new Date();
-        const dataInicioReal = startDate ? new Date(startDate + 'T00:00:00-03:00') : new Date(hoje.getFullYear(), hoje.getMonth(), 1, 0, 0, 0);
-        const dataFimReal = endDate ? new Date(endDate + 'T23:59:59-03:00') : new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0, 23, 59, 59);
+        const anoAtual = hoje.getFullYear();
+        const mesAtual = hoje.getMonth();
+
+        const dataInicioReal = startDate
+            ? new Date(startDate + 'T00:00:00-03:00')
+            : new Date(anoAtual, mesAtual, 1, 0, 0, 0);
+
+        const dataFimReal = endDate
+            ? new Date(endDate + 'T23:59:59-03:00')
+            : new Date(anoAtual, mesAtual + 1, 0, 23, 59, 59);
 
         // 1. Despesas
         await this.propagarDespesasRecorrentes(tenantId, dataInicioReal, dataFimReal);
@@ -330,8 +398,6 @@ export class FinanceiroService {
             where: { tenantId, date: { gte: dataInicioReal, lte: dataFimReal } },
             orderBy: { date: 'desc' }
         });
-
-        // Blindagem em todas as somatórias: (Number(...) || 0)
         const despesasPagas = despesas.filter(d => d.isPaid).reduce((acc, d) => acc + (Number(d.amount) || 0), 0);
         const despesasPendentes = despesas.filter(d => !d.isPaid).reduce((acc, d) => acc + (Number(d.amount) || 0), 0);
 
@@ -339,53 +405,63 @@ export class FinanceiroService {
         const agendamentosConcluidos = await this.prisma.agendamento.findMany({
             where: { tenantId, status: 'concluido', horario: { data: { gte: dataInicioReal, lte: dataFimReal } } }
         });
+
         let totalAgendamentos = 0;
         const receitaPorPagamento = { DINHEIRO: 0, PIX: 0, CARTAO: 0, MANUAL: 0 };
-
-        agendamentosConcluidos.forEach(ag => {
-            const valorConvertido = Number(ag.valor) || 0; // Garantia
-            totalAgendamentos += valorConvertido;
+        const listaAgendamentos = agendamentosConcluidos.map(ag => {
+            const valor = Number(ag.valor) || 0;
+            totalAgendamentos += valor;
             if (ag.formaPagamento && receitaPorPagamento[ag.formaPagamento] !== undefined) {
-                receitaPorPagamento[ag.formaPagamento] += valorConvertido;
+                receitaPorPagamento[ag.formaPagamento] += valor;
             }
+            // Agendamentos concluídos são sempre considerados recebidos (não têm status de pendência no schema)
+            return { id: `agend-${ag.id}`, description: `Serviço: ${ag.servico}`, amount: valor, date: ag.createdAt, tipo: 'AGENDAMENTO', isPaid: true };
         });
 
-        // 3. Vendas Gerais
+        // 3. Vendas de Produtos/Consumíveis
         const listaVendas = await this.prisma.itemVenda.findMany({
             where: { tenantId, dataVenda: { gte: dataInicioReal, lte: dataFimReal } }
         });
+
         let totalProdutos = 0;
         let totalBebidas = 0;
-        listaVendas.forEach(item => {
-            const valorTotalItem = (Number(item.valorUnitario) || 0) * (item.quantidade || 1); // Dupla garantia
+        const listaVendasFormatada = listaVendas.map(item => {
+            const valor = (Number(item.valorUnitario) || 0) * (item.quantidade || 1);
             if (item.tipoOrigem === 'CONSUMIVEL') {
-                totalBebidas += valorTotalItem;
+                totalBebidas += valor;
             } else {
-                totalProdutos += valorTotalItem;
+                totalProdutos += valor;
             }
+            // Vendas já são registradas como recebidas no momento da venda
+            return { id: `venda-${item.id}`, description: `Venda: ${item.nomeItem}`, amount: valor, date: item.dataVenda, tipo: 'VENDA_PRODUTO', isPaid: true };
         });
 
-        // 4. Entradas Manuais (Comandas / Avulsas)
+        // 4. Entradas Manuais
         const entradasManuais = await this.prisma.entrada.findMany({
             where: { tenantId, date: { gte: dataInicioReal, lte: dataFimReal } }
         });
 
         let totalEntradasManuaisPagas = 0;
         let totalEntradasManuaisPendentes = 0;
-
-        entradasManuais.forEach(entrada => {
-            const valorEntrada = Number(entrada.amount) || 0; // Previne o erro NaN
-            if (entrada.isPaid) {
-                totalEntradasManuaisPagas += valorEntrada;
-                receitaPorPagamento.MANUAL += valorEntrada;
+        const listaManuaisFormatada = entradasManuais.map(e => {
+            const valor = Number(e.amount) || 0;
+            if (e.isPaid) {
+                totalEntradasManuaisPagas += valor;
+                receitaPorPagamento.MANUAL += valor;
             } else {
-                totalEntradasManuaisPendentes += valorEntrada;
+                totalEntradasManuaisPendentes += valor;
             }
+            // Aqui o isPaid precisa vir do banco de verdade (é o que estava faltando)
+            return { id: `manual-${e.id}`, description: e.description, amount: valor, date: e.date, tipo: 'ENTRADA_MANUAL', isPaid: e.isPaid };
         });
 
         // 5. Consolidado Final
         const totalVendasGeral = totalProdutos + totalBebidas;
         const totalEntradasReal = totalAgendamentos + totalVendasGeral + totalEntradasManuaisPagas;
+
+        // Unifica tudo na lista de entradas para o front exibir
+        const listaCompletaEntradas = [...listaAgendamentos, ...listaVendasFormatada, ...listaManuaisFormatada]
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
         return {
             totais: {
@@ -406,7 +482,7 @@ export class FinanceiroService {
                     pendentes: despesasPendentes,
                     lista: despesas
                 },
-                entradas: { lista: entradasManuais },
+                entradas: { lista: listaCompletaEntradas }, // 👈 Lista completa unificada
                 totalComissoes: { total: 0 }
             },
             lucroLiquidoReal: totalEntradasReal - despesasPagas
