@@ -2,6 +2,7 @@ import {
     Controller,
     Get,
     Post,
+    Patch,
     Body,
     UseGuards,
     ForbiddenException,
@@ -14,6 +15,7 @@ import { FuncionariosService } from './funcionarios.service';
 import { TenantId } from '../tenant/tenant.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { AlterarSenhaDto } from './dto/alterar-senha.dto';
 
 // 👉 IMPORTS DA BLINDAGEM SAAS COM OS SEUS CAMINHOS CORRETOS
 import { RequireFeatures } from '../decorator/require-features.decorator';
@@ -96,6 +98,35 @@ export class FuncionariosController {
         }
 
         return this.funcionariosService.obterPainel(tenantId, usuarioLogado.id);
+    }
+
+    // =========================================================================
+    // MEU PERFIL (Dados do próprio funcionário logado)
+    // =========================================================================
+    @Get('me')
+    async buscarMeuPerfil(
+        @TenantId() tenantId: string,
+        @CurrentUser() usuarioLogado: any
+    ) {
+        if (usuarioLogado.tipo !== 'FUNCIONARIO') {
+            throw new ForbiddenException('Acesso restrito a profissionais.');
+        }
+        return this.funcionariosService.buscarMeuPerfil(tenantId, usuarioLogado.id);
+    }
+
+    // =========================================================================
+    // ALTERAR A PRÓPRIA SENHA
+    // =========================================================================
+    @Patch('senha')
+    async alterarSenha(
+        @TenantId() tenantId: string,
+        @CurrentUser() usuarioLogado: any,
+        @Body() dto: AlterarSenhaDto
+    ) {
+        if (usuarioLogado.tipo !== 'FUNCIONARIO') {
+            throw new ForbiddenException('Acesso restrito a profissionais.');
+        }
+        return this.funcionariosService.alterarSenha(tenantId, usuarioLogado.id, dto.senhaAtual, dto.novaSenha);
     }
 
     @Get(':id/horarios')

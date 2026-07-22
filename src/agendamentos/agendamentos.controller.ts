@@ -1,10 +1,16 @@
-import { Controller, Post, Get, Body, Param, Query, Patch, ParseIntPipe } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, Query, Patch, ParseIntPipe, UseGuards } from '@nestjs/common';
 import { AgendamentosService } from './agendamentos.service';
-import { TenantId } from '../tenant/tenant.decorator'; 
+import { TenantId } from '../tenant/tenant.decorator';
 import { CriarAgendamentoDto } from './dto/criar-agendamento.dto';
 import { EditarAgendamentoDto } from './dto/editar-agendamento.dto';
 import { CriarAgendaEmMassaDto } from './dto/criar-agenda-em-massa.dto.ts';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { SaasFeatureGuard } from '../guard/saas-feature.guard';
+import { RequireFeatures } from '../decorator/require-features.decorator';
+import { SaasFeature } from '../auth/saas-features.enum';
 
+@UseGuards(JwtAuthGuard, SaasFeatureGuard)
+@RequireFeatures(SaasFeature.AGENDAMENTO)
 @Controller('agendamentos')
 export class AgendamentosController {
   constructor(private readonly agendamentosService: AgendamentosService) { }

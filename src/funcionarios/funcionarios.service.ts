@@ -45,6 +45,42 @@ export class FuncionariosService {
     });
   }
 
+  // =========================================================================
+  // 1.1 MEU PERFIL (Dados do próprio funcionário logado)
+  // =========================================================================
+  async buscarMeuPerfil(tenantId: string, funcionarioId: number) {
+    const funcionario = await this.prisma.funcionario.findFirst({
+      where: { id: funcionarioId, tenantId },
+      select: { id: true, nome: true, email: true, role: true, ativo: true, fotoUrl: true }
+    });
+
+    if (!funcionario) throw new NotFoundException('Funcionário não encontrado.');
+    return funcionario;
+  }
+
+  // =========================================================================
+  // 1.2 ALTERAR A PRÓPRIA SENHA
+  // =========================================================================
+  async alterarSenha(tenantId: string, funcionarioId: number, senhaAtual: string, novaSenha: string) {
+    const funcionario = await this.prisma.funcionario.findFirst({
+      where: { id: funcionarioId, tenantId }
+    });
+
+    if (!funcionario) throw new NotFoundException('Funcionário não encontrado.');
+
+    const senhaCorreta = await bcrypt.compare(senhaAtual, funcionario.password);
+    if (!senhaCorreta) throw new BadRequestException('Senha atual incorreta.');
+
+    const novaSenhaHasheada = await bcrypt.hash(novaSenha, 10);
+
+    await this.prisma.funcionario.update({
+      where: { id: funcionarioId },
+      data: { password: novaSenhaHasheada }
+    });
+
+    return { message: 'Senha alterada com sucesso.' };
+  }
+
  // =========================================================================
   // 2. ABRIR AGENDA EM MASSA (Inteligente e Multi-Tenant)
   // =========================================================================

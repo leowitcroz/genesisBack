@@ -149,11 +149,12 @@ export class AgendamentosService {
         include: { horario: true, cliente: { include: { assinatura: true } } }
       });
 
+      if (!agendamento) throw new NotFoundException('Agendamento não encontrado.');
+
       if (clienteId && agendamento.clienteId !== clienteId) {
         throw new ForbiddenException('Você não tem permissão para cancelar este agendamento.');
       }
 
-      if (!agendamento) throw new NotFoundException('Agendamento não encontrado.');
       if (agendamento.status === 'cancelado') throw new BadRequestException('Já cancelado.');
 
       // 1. Atualiza Status e libera horário
