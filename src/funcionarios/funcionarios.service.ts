@@ -51,7 +51,7 @@ export class FuncionariosService {
   async buscarMeuPerfil(tenantId: string, funcionarioId: number) {
     const funcionario = await this.prisma.funcionario.findFirst({
       where: { id: funcionarioId, tenantId },
-      select: { id: true, nome: true, email: true, role: true, ativo: true, fotoUrl: true }
+      select: { id: true, nome: true, email: true, role: true, ativo: true, fotoUrl: true, isPlatformOwner: true }
     });
 
     if (!funcionario) throw new NotFoundException('Funcionário não encontrado.');

@@ -197,7 +197,8 @@ export class AuthService {
             nome: user.nome,
             email: user.email,
             tipo: tipoUsuario,
-            role: user.role
+            role: user.role,
+            isPlatformOwner: tipoUsuario === 'FUNCIONARIO' ? user.isPlatformOwner === true : false
         }
     };
 }

@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
 import { AdmController } from './adm.controller';
 import { AdmService } from './adm.service';
-import { PrismaModule } from '../prisma/prisma.module'; 
+import { FaturamentoCronService } from './faturamento-cron.service';
+import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
-  imports: [PrismaModule], 
+  imports: [PrismaModule],
   controllers: [AdmController],
-  providers: [AdmService]
+  providers: [AdmService, FaturamentoCronService]
 })
 export class AdmModule {}

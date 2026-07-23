@@ -1,4 +1,5 @@
 import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { TenantMiddleware } from './tenant/tenant.middleware';
@@ -16,7 +17,8 @@ import { ProdutosModule } from './produtos/produtos.module';
 
 @Module({
   imports: [
-    PrismaModule, 
+    ScheduleModule.forRoot(),
+    PrismaModule,
     TenantModule,
     AgendamentosModule,
     ClientesModule,

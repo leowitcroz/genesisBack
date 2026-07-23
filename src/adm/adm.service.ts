@@ -135,6 +135,45 @@ export class AdmService {
     });
   }
 
+  // 1.1 Confirmar o pagamento da fatura mais recente e liberar/renovar o acesso da loja
+  async confirmarPagamento(tenantId: string) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) {
+      throw new NotFoundException('Estabelecimento não encontrado no sistema.');
+    }
+
+    const ultimaFatura = await this.prisma.faturaSaaS.findFirst({
+      where: { tenantId },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    if (!ultimaFatura) {
+      throw new NotFoundException('Nenhuma fatura encontrada para esta loja.');
+    }
+
+    const hoje = new Date();
+    const proximoVencimento = new Date(hoje);
+    proximoVencimento.setDate(proximoVencimento.getDate() + 30); // Próximo ciclo: 30 dias a partir de hoje
+
+    return await this.prisma.$transaction(async (tx) => {
+      const faturaAtualizada = await tx.faturaSaaS.update({
+        where: { id: ultimaFatura.id },
+        data: {
+          status: 'ATIVO',
+          dataPagamento: hoje,
+          dataVencimento: proximoVencimento,
+        }
+      });
+
+      const tenantAtualizado = await tx.tenant.update({
+        where: { id: tenantId },
+        data: { ativo: true }
+      });
+
+      return { tenant: tenantAtualizado, fatura: faturaAtualizada };
+    });
+  }
+
   // 2. Bloquear ou Desbloquear a Loja (Acesso ao Sistema)
   async alterarStatusLoja(tenantId: string, status: boolean) {
     const lojaExiste = await this.prisma.tenant.findUnique({ where: { id: tenantId } });

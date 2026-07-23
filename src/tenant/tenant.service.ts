@@ -42,13 +42,14 @@ export class TenantService {
       return await this.prisma.$transaction(async (tx) => {
         
         // A. Cria o Tenant (A nova loja)
+        // 👇 Nasce BLOQUEADA (ativo: false) — só libera quando o ADM confirmar o primeiro pagamento
         const novoTenant = await tx.tenant.create({
           data: {
             subdomain: subdomainFormatado,
             nomeNegocio: dados.nomeNegocio,
-            ativo: true,
-            moduloAgendamento: true, 
-            moduloFinanceiro: true, 
+            ativo: false,
+            moduloAgendamento: true,
+            moduloFinanceiro: true,
             moduloAssinaturas: false,
             moduloVendas: false,
             moduloProdutos: false,
@@ -71,19 +72,16 @@ export class TenantService {
           },
         });
 
-        // 🟢 D. Cria o primeiro registro de Renovação/Mensalidade para o Painel Master
+        // 🟢 D. Cria a primeira fatura, já vencendo agora (a loja está bloqueada até ela ser paga)
         const dataInicio = new Date();
-        const dataVencimento = new Date();
-        dataVencimento.setDate(dataVencimento.getDate() + 30); // Vencimento para 30 dias
 
-        // 👇 Correção aqui: usando faturaSaaS em vez de renovacao
         const primeiraFatura = await tx.faturaSaaS.create({
           data: {
             tenantId: novoTenant.id,
             valor: dados.valorPlano || 99.90,
             status: 'PENDENTE',
             dataInicio: dataInicio,
-            dataVencimento: dataVencimento,
+            dataVencimento: dataInicio,
           },
         });
 
