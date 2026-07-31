@@ -16,7 +16,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { SaasFeatureGuard } from '../guard/saas-feature.guard';
 import { RequireFeatures } from '../decorator/require-features.decorator';
 import { SaasFeature } from '../auth/saas-features.enum';
-import { TipoProduto } from '@prisma/client';
+import { TipoProduto, FormaPagamento } from '@prisma/client';
 
 @UseGuards(JwtAuthGuard, SaasFeatureGuard)
 @RequireFeatures(SaasFeature.PRODUTOS) // Garante que a loja tem o plano com Produtos ativado
@@ -30,12 +30,13 @@ export class ProdutosController {
   @Post()
   async criarProduto(
     @TenantId() tenantId: string,
-    @Body() body: { 
-      nome: string; 
-      valor: number; 
-      estoque?: number; 
-      tipo: TipoProduto; 
-      caracteristicas?: any 
+    @Body() body: {
+      nome: string;
+      valor: number;
+      valorCompra?: number;
+      estoque?: number;
+      tipo: TipoProduto;
+      caracteristicas?: any
     }
   ) {
     return this.produtosService.criar(tenantId, body);
@@ -56,12 +57,13 @@ export class ProdutosController {
   async atualizarProduto(
     @TenantId() tenantId: string,
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: { 
-      nome?: string; 
-      valor?: number; 
-      estoque?: number; 
-      tipo?: TipoProduto; 
-      caracteristicas?: any 
+    @Body() body: {
+      nome?: string;
+      valor?: number;
+      valorCompra?: number;
+      estoque?: number;
+      tipo?: TipoProduto;
+      caracteristicas?: any
     }
   ) {
     return this.produtosService.atualizar(tenantId, id, body);
@@ -84,15 +86,22 @@ export class ProdutosController {
   @Post('venda')
   async realizarVenda(
     @TenantId() tenantId: string,
-    @Body() body: { 
+    @Body() body: {
       produtoId: number;
-      funcionarioId: string | number; 
-      nomeItem: string; 
-      tipoOrigem: TipoProduto; 
-      quantidade: number; 
-      valorUnitario: number; 
-      formaPagamento: string;
+      funcionarioId: string | number;
+      nomeItem: string;
+      tipoOrigem: TipoProduto;
+      quantidade: number;
+      valorUnitario: number;
+      formaPagamento: FormaPagamento;
       centroCustoId?: string; // Opcional: Vai para o DRE se preenchido
+      valorRecebido?: number;
+      carroTroca?: {
+        nome: string;
+        valorCompra: number;
+        valorVenda: number;
+        despesas?: number;
+      };
     }
   ) {
     return this.produtosService.realizarVenda(tenantId, {
@@ -103,7 +112,9 @@ export class ProdutosController {
       quantidade: Number(body.quantidade),
       valorUnitario: Number(body.valorUnitario),
       formaPagamento: body.formaPagamento,
-      centroCustoId: body.centroCustoId
+      centroCustoId: body.centroCustoId,
+      valorRecebido: body.valorRecebido !== undefined ? Number(body.valorRecebido) : undefined,
+      carroTroca: body.carroTroca
     });
   }
 

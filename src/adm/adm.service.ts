@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PlanoSaaS } from '@prisma/client';
+import { NOME_PADRAO_PLANO, VALOR_PADRAO_PLANO } from './planos.constants';
 
 @Injectable()
 export class AdmService {
@@ -56,6 +57,65 @@ export class AdmService {
   }
 
   // =========================================================
+  // PREÇOS DOS PLANOS (editável pelo ADM, sem precisar mexer em código)
+  // =========================================================
+
+  // Garante que sempre existe um preço configurado pra cada plano (auto-seed com valores padrão)
+  async listarPlanosPreco() {
+    const planos = Object.values(PlanoSaaS);
+
+    await Promise.all(planos.map(plano =>
+      this.prisma.planoPreco.upsert({
+        where: { plano },
+        update: {},
+        create: {
+          plano,
+          nome: NOME_PADRAO_PLANO[plano],
+          valorMensal: VALOR_PADRAO_PLANO[plano],
+        },
+      })
+    ));
+
+    return this.prisma.planoPreco.findMany({ orderBy: { valorMensal: 'asc' } });
+  }
+
+  async atualizarPlanoPreco(plano: PlanoSaaS, dados: { nome?: string; valorMensal?: number }) {
+    return this.prisma.planoPreco.upsert({
+      where: { plano },
+      update: {
+        ...(dados.nome !== undefined && { nome: dados.nome }),
+        ...(dados.valorMensal !== undefined && { valorMensal: dados.valorMensal }),
+      },
+      create: {
+        plano,
+        nome: dados.nome || NOME_PADRAO_PLANO[plano],
+        valorMensal: dados.valorMensal ?? VALOR_PADRAO_PLANO[plano],
+      },
+    });
+  }
+
+  // Valor mensal vigente de um plano (usado ao gerar faturas — nunca hardcoded)
+  async buscarValorVigentePlano(plano: PlanoSaaS): Promise<number> {
+    const preco = await this.prisma.planoPreco.findUnique({ where: { plano } });
+    return preco ? Number(preco.valorMensal) : VALOR_PADRAO_PLANO[plano];
+  }
+
+  // =========================================================
+  // HISTÓRICO DE PAGAMENTOS DE UMA LOJA
+  // =========================================================
+  async historicoPagamentos(tenantId: string) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) {
+      throw new NotFoundException('Estabelecimento não encontrado no sistema.');
+    }
+
+    return this.prisma.faturaSaaS.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  // =========================================================
   // GESTÃO DOS TENANTS (LOJAS) E RENOVAÇÕES
   // =========================================================
 
@@ -98,17 +158,19 @@ export class AdmService {
         const vencimento = new Date();
         vencimento.setDate(vencimento.getDate() + 30); // Projeta o próximo vencimento para 30 dias
 
+        const valor = dadosPlano.valorFatura ?? await this.buscarValorVigentePlano(dadosPlano.planoSaaS);
+
         await tx.faturaSaaS.create({
           data: {
             tenantId: tenantId,
-            valor: dadosPlano.valorFatura || 99.90, // Usa o valor enviado ou o padrão
+            valor,
             status: dadosPlano.statusFinanceiro || 'ATIVO', // Se está gerando, normalmente já entra como ATIVO
             dataInicio: hoje,
             dataVencimento: vencimento,
             dataPagamento: dadosPlano.statusFinanceiro === 'ATIVO' ? hoje : null,
           }
         });
-      } 
+      }
       
       // C. Se não mandou gerar nova, mas mandou mudar o status (Ex: Dar baixa manual em uma fatura PENDENTE)
       else if (dadosPlano.statusFinanceiro) {

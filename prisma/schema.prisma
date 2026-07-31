@@ -89,9 +89,19 @@ model Entrada {
 }
 
 enum PlanoSaaS {
-  BASICO
-  PRO
-  ENTERPRISE
+  BASICO               // Financeiro
+  INTERMEDIARIO_VENDAS // Financeiro + Produtos/Estoque + Vendas
+  INTERMEDIARIO_AGENDA // Financeiro + Agendamento
+  PRO                  // Acesso total (Financeiro + Agendamento + Produtos + Vendas)
+  ENTERPRISE           // Legado: tratado igual ao PRO
+}
+
+// Preço e nome de exibição de cada plano — o ADM edita isso pela tela, sem precisar mexer em código
+model PlanoPreco {
+  plano       PlanoSaaS @id
+  nome        String    @db.VarChar(100)
+  valorMensal Decimal   @db.Decimal(10, 2)
+  updatedAt   DateTime  @updatedAt
 }
 
 // Tabela onde o Tenant cria as próprias regras (Ex: "Plano Lava-Rápido Mensal", "Clube da Barba")
@@ -197,7 +207,8 @@ model Servico {
 model Produto {
   id      Int         @id @default(autoincrement())
   nome    String      @db.VarChar(255)
-  valor   Decimal     @db.Decimal(10, 2)
+  valor   Decimal     @db.Decimal(10, 2) // Valor de venda
+  valorCompra Decimal @default(0) @db.Decimal(10, 2) // Quanto custou/foi pago (compra ou troca)
   estoque Int         @default(0)
   tipo    TipoProduto @default(PRODUTO)
   caracteristicas Json?
@@ -224,6 +235,7 @@ model ItemVenda {
   valorUnitario Decimal     @db.Decimal(10, 2)
   dataVenda     DateTime    @default(now())
   tipoOrigem    TipoProduto
+  formaPagamento FormaPagamento?
 
   tenantId String
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -448,4 +460,6 @@ enum FormaPagamento {
   PIX
   DINHEIRO
   PLANO
+  CARRO_TROCA               // Cliente deu o carro dele como parte do pagamento
+  CARRO_TROCA_FINANCIAMENTO // Carro na troca + o restante financiado
 }

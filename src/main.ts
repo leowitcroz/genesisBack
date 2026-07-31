@@ -14,6 +14,7 @@ async function bootstrap() {
   app.enableCors({
     origin: [
       'http://localhost:5173', 
+      'http://localhost:5174', 
       /^http:\/\/(.*)\.localhost:5173$/,
       /^https:\/\/(.*)\.genesis\.com$/,
       // 👇 Adicionado o domínio principal e subdomínios da wsdigital

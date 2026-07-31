@@ -1,5 +1,7 @@
 import { Injectable, ConflictException, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { PlanoSaaS } from '@prisma/client';
+import { MODULOS_POR_PLANO, VALOR_PADRAO_PLANO } from '../adm/planos.constants';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -37,22 +39,27 @@ export class TenantService {
       throw new ConflictException('Este e-mail já está cadastrado no sistema por um cliente.');
     }
 
+    const plano: PlanoSaaS = dados.plano && Object.values(PlanoSaaS).includes(dados.plano) ? dados.plano : PlanoSaaS.BASICO;
+    const modulosDoPlano = MODULOS_POR_PLANO[plano];
+
     try {
       // 2. Executa a transação atômica
       return await this.prisma.$transaction(async (tx) => {
-        
+
         // A. Cria o Tenant (A nova loja)
         // 👇 Nasce BLOQUEADA (ativo: false) — só libera quando o ADM confirmar o primeiro pagamento
+        // Módulos liberados seguem o plano escolhido (ver src/adm/planos.constants.ts)
         const novoTenant = await tx.tenant.create({
           data: {
             subdomain: subdomainFormatado,
             nomeNegocio: dados.nomeNegocio,
             ativo: false,
-            moduloAgendamento: true,
-            moduloFinanceiro: true,
+            planoSaaS: plano,
+            moduloFinanceiro: modulosDoPlano.moduloFinanceiro,
+            moduloAgendamento: modulosDoPlano.moduloAgendamento,
+            moduloProdutos: modulosDoPlano.moduloProdutos,
+            moduloVendas: modulosDoPlano.moduloVendas,
             moduloAssinaturas: false,
-            moduloVendas: false,
-            moduloProdutos: false,
           },
         });
 
@@ -75,10 +82,13 @@ export class TenantService {
         // 🟢 D. Cria a primeira fatura, já vencendo agora (a loja está bloqueada até ela ser paga)
         const dataInicio = new Date();
 
+        const precoConfigurado = await tx.planoPreco.findUnique({ where: { plano } });
+        const valorFatura = dados.valorPlano ?? (precoConfigurado ? Number(precoConfigurado.valorMensal) : VALOR_PADRAO_PLANO[plano]);
+
         const primeiraFatura = await tx.faturaSaaS.create({
           data: {
             tenantId: novoTenant.id,
-            valor: dados.valorPlano || 99.90,
+            valor: valorFatura,
             status: 'PENDENTE',
             dataInicio: dataInicio,
             dataVencimento: dataInicio,

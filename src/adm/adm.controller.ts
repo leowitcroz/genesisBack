@@ -39,6 +39,26 @@ export class AdmController {
     return this.admService.atualizarPlanoLoja(id, body);
   }
 
+  // Histórico de faturas/pagamentos de uma loja específica
+  @Get('tenants/:id/historico-pagamentos')
+  async historicoPagamentos(@Param('id') id: string) {
+    return this.admService.historicoPagamentos(id);
+  }
+
+  // Preço e nome de cada plano — o ADM edita livremente, sem precisar mexer em código
+  @Get('planos')
+  async listarPlanos() {
+    return this.admService.listarPlanosPreco();
+  }
+
+  @Patch('planos/:plano')
+  async atualizarPlanoPreco(
+    @Param('plano') plano: PlanoSaaS,
+    @Body() body: { nome?: string; valorMensal?: number }
+  ) {
+    return this.admService.atualizarPlanoPreco(plano, body);
+  }
+
   @Patch('tenants/:id/status')
   async alterarStatus(
     @Param('id') id: string,

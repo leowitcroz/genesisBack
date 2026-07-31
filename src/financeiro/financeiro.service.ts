@@ -1,12 +1,18 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ExpenseType } from '@prisma/client';
+import { ExpenseType, PlanoSaaS } from '@prisma/client';
 
-const TABELA_PRECOS_SAAS = {
-    BASICO: 97.00,
-    PRO: 197.00,
-    ENTERPRISE: 397.00,
-};
+const RECEITA_POR_PLANO_VAZIA = (): Record<PlanoSaaS, number> => ({
+    BASICO: 0, INTERMEDIARIO_VENDAS: 0, INTERMEDIARIO_AGENDA: 0, PRO: 0, ENTERPRISE: 0,
+});
+
+const ASSINATURAS_ATIVAS_VAZIA = (): Record<PlanoSaaS, { qtd: number; valor: number }> => ({
+    BASICO: { qtd: 0, valor: 0 },
+    INTERMEDIARIO_VENDAS: { qtd: 0, valor: 0 },
+    INTERMEDIARIO_AGENDA: { qtd: 0, valor: 0 },
+    PRO: { qtd: 0, valor: 0 },
+    ENTERPRISE: { qtd: 0, valor: 0 },
+});
 
 @Injectable()
 export class FinanceiroService {
@@ -491,18 +497,20 @@ export class FinanceiroService {
 
     async obterResumoFinanceiroSaaS(myTenantId: string, startDate: Date, endDate: Date) {
         await this.propagarDespesasRecorrentes(myTenantId, startDate, endDate);
+        // 👇 Filtra por dataPagamento (quando o dinheiro realmente entrou), não por dataVencimento
+        // (que agora representa o PRÓXIMO vencimento projetado, não a data do pagamento em si)
         const renovacoesPagas = await this.prisma.faturaSaaS.findMany({
             where: {
                 status: 'ATIVO',
-                dataVencimento: { gte: startDate, lte: endDate },
+                dataPagamento: { gte: startDate, lte: endDate },
                 tenant: { id: { not: myTenantId } }
             },
             include: { tenant: true }
         });
 
         let receitaBruta = 0;
-        const receitaPorPlano = { BASICO: 0, PRO: 0, ENTERPRISE: 0 };
-        const assinaturasAtivas = { BASICO: { qtd: 0, valor: 0 }, PRO: { qtd: 0, valor: 0 }, ENTERPRISE: { qtd: 0, valor: 0 } };
+        const receitaPorPlano = RECEITA_POR_PLANO_VAZIA();
+        const assinaturasAtivas = ASSINATURAS_ATIVAS_VAZIA();
 
         renovacoesPagas.forEach(fatura => {
             const valorPago = Number(fatura.valor) || 0;
@@ -588,12 +596,18 @@ export class FinanceiroService {
     }
 
     async obterLojasRelatorioFinanceiro() {
-        const lojas = await this.prisma.tenant.findMany({
-            where: { ativo: true }, select: { id: true, nomeNegocio: true, planoSaaS: true, createdAt: true }
-        });
+        const [lojas, precos] = await Promise.all([
+            this.prisma.tenant.findMany({
+                where: { ativo: true }, select: { id: true, nomeNegocio: true, planoSaaS: true, createdAt: true }
+            }),
+            this.prisma.planoPreco.findMany(),
+        ]);
+
+        const valorPorPlano = Object.fromEntries(precos.map(p => [p.plano, Number(p.valorMensal)]));
+
         return lojas.map(loja => ({
             ...loja,
-            valorAssinatura: TABELA_PRECOS_SAAS[loja.planoSaaS] || 0,
+            valorAssinatura: valorPorPlano[loja.planoSaaS] || 0,
             criadoEm: loja.createdAt
         }));
     }

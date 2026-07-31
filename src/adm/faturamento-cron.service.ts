@@ -1,14 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
-import { PlanoSaaS } from '@prisma/client';
-
-// Preço mensal de cada plano, usado só pra saber o valor da fatura de renovação automática.
-const TABELA_PRECOS_SAAS: Record<PlanoSaaS, number> = {
-  BASICO: 97.00,
-  PRO: 197.00,
-  ENTERPRISE: 397.00,
-};
+import { VALOR_PADRAO_PLANO } from './planos.constants';
 
 // =========================================================================
 // ROTINA DIÁRIA DE COBRANÇA DO SAAS
@@ -46,10 +39,13 @@ export class FaturamentoCronService {
         continue;
       }
 
+      const precoConfigurado = await this.prisma.planoPreco.findUnique({ where: { plano: tenant.planoSaaS } });
+      const valor = precoConfigurado ? Number(precoConfigurado.valorMensal) : VALOR_PADRAO_PLANO[tenant.planoSaaS];
+
       await this.prisma.faturaSaaS.create({
         data: {
           tenantId: tenant.id,
-          valor: TABELA_PRECOS_SAAS[tenant.planoSaaS] ?? 97.00,
+          valor,
           status: 'PENDENTE',
           dataInicio: hoje,
           dataVencimento: hoje,
