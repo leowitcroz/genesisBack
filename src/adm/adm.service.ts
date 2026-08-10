@@ -60,21 +60,23 @@ export class AdmService {
   // PREÇOS DOS PLANOS (editável pelo ADM, sem precisar mexer em código)
   // =========================================================
 
-  // Garante que sempre existe um preço configurado pra cada plano (auto-seed com valores padrão)
+  // Garante que sempre existe um preço configurado pra cada plano (auto-seed com valores padrão).
+  // Só grava o que realmente falta — evita disparar upserts em paralelo nas linhas que já
+  // existem (isso já causou deadlock no MySQL quando duas chamadas batiam ao mesmo tempo).
   async listarPlanosPreco() {
-    const planos = Object.values(PlanoSaaS);
+    const existentes = await this.prisma.planoPreco.findMany();
+    const jaExistem = new Set(existentes.map(p => p.plano));
+    const faltando = Object.values(PlanoSaaS).filter(plano => !jaExistem.has(plano));
 
-    await Promise.all(planos.map(plano =>
-      this.prisma.planoPreco.upsert({
-        where: { plano },
-        update: {},
-        create: {
-          plano,
-          nome: NOME_PADRAO_PLANO[plano],
-          valorMensal: VALOR_PADRAO_PLANO[plano],
-        },
-      })
-    ));
+    if (faltando.length === 0) {
+      return existentes.sort((a, b) => Number(a.valorMensal) - Number(b.valorMensal));
+    }
+
+    for (const plano of faltando) {
+      await this.prisma.planoPreco.create({
+        data: { plano, nome: NOME_PADRAO_PLANO[plano], valorMensal: VALOR_PADRAO_PLANO[plano] },
+      });
+    }
 
     return this.prisma.planoPreco.findMany({ orderBy: { valorMensal: 'asc' } });
   }
