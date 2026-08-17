@@ -14,11 +14,12 @@ import { ProdutosService } from './produtos.service';
 import { TenantId } from '../tenant/tenant.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { SaasFeatureGuard } from '../guard/saas-feature.guard';
+import { TenantMatchGuard } from '../guard/tenant-match.guard';
 import { RequireFeatures } from '../decorator/require-features.decorator';
 import { SaasFeature } from '../auth/saas-features.enum';
 import { TipoProduto, FormaPagamento } from '@prisma/client';
 
-@UseGuards(JwtAuthGuard, SaasFeatureGuard)
+@UseGuards(JwtAuthGuard, TenantMatchGuard, SaasFeatureGuard)
 @RequireFeatures(SaasFeature.PRODUTOS) // Garante que a loja tem o plano com Produtos ativado
 @Controller('produtos')
 export class ProdutosController {

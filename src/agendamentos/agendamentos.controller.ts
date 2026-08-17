@@ -6,10 +6,11 @@ import { EditarAgendamentoDto } from './dto/editar-agendamento.dto';
 import { CriarAgendaEmMassaDto } from './dto/criar-agenda-em-massa.dto.ts';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { SaasFeatureGuard } from '../guard/saas-feature.guard';
+import { TenantMatchGuard } from '../guard/tenant-match.guard';
 import { RequireFeatures } from '../decorator/require-features.decorator';
 import { SaasFeature } from '../auth/saas-features.enum';
 
-@UseGuards(JwtAuthGuard, SaasFeatureGuard)
+@UseGuards(JwtAuthGuard, TenantMatchGuard, SaasFeatureGuard)
 @RequireFeatures(SaasFeature.AGENDAMENTO)
 @Controller('agendamentos')
 export class AgendamentosController {

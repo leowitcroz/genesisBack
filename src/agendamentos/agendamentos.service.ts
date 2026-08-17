@@ -230,6 +230,7 @@ export class AgendamentosService {
     formaPagamento: FormaPagamento;
     cupomAplicado: boolean;
     status?: string;
+    valorServico: number;
   }>) {
     return await this.prisma.$transaction(async (tx) => {
       // 1. BUSCA O ESTADO ATUAL (Essencial para o estorno)
@@ -354,6 +355,14 @@ export class AgendamentosService {
       }
 
       if (cupomEfetivo && valorFinalCobrado > 0) valorFinalCobrado *= 0.90;
+
+      // Sobrescrita manual: serviços de preço variável (ex: dentista cobrando um
+      // valor diferente por limpeza/molde de caso a caso) usam o valor digitado
+      // em vez do valor de catálogo, mantendo intacta a lógica de créditos/plano acima.
+      if (data.valorServico !== undefined) {
+        valorTotalOriginal = data.valorServico;
+        valorFinalCobrado = data.valorServico;
+      }
 
       const novoTipo = valorFinalCobrado === 0 && novosCreditosGastos > 0 ? 'PLANO_TOTAL' :
         novosCreditosGastos > 0 ? 'PARCIAL' : 'AVULSO';

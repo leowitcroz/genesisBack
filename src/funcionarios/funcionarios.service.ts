@@ -6,11 +6,15 @@ import {
   
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class FuncionariosService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cloudinaryService: CloudinaryService,
+  ) {}
 
   // =========================================================================
   // 1. CRUD BÁSICO (Gerenciamento pela Recepção/Dono)
@@ -341,5 +345,26 @@ export class FuncionariosService {
     });
 
     return { message: 'Horário removido com sucesso da grade.' };
+  }
+
+  // Foto + bio exibidas na seção "Nossa Equipe" da vitrine pública da loja.
+  async atualizarVitrine(tenantId: string, id: number, dados: { descricao?: string }, foto?: Express.Multer.File) {
+    const funcionario = await this.prisma.funcionario.findFirst({ where: { id, tenantId } });
+    if (!funcionario) {
+      throw new NotFoundException('Funcionário não encontrado ou não pertence a este estabelecimento.');
+    }
+
+    const fotoUrl = foto
+      ? await this.cloudinaryService.uploadImagem(foto.buffer, `wsdigital/${tenantId}/funcionarios`)
+      : undefined;
+
+    return this.prisma.funcionario.update({
+      where: { id },
+      data: {
+        ...(dados.descricao !== undefined && { descricao: dados.descricao || null }),
+        ...(fotoUrl !== undefined && { fotoUrl }),
+      },
+      select: { id: true, nome: true, fotoUrl: true, descricao: true },
+    });
   }
 }

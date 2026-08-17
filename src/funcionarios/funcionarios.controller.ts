@@ -5,12 +5,15 @@ import {
     Patch,
     Body,
     UseGuards,
+    UseInterceptors,
+    UploadedFile,
     ForbiddenException,
     BadRequestException,
     Param,
     Query,
     Delete
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { FuncionariosService } from './funcionarios.service';
 import { TenantId } from '../tenant/tenant.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -21,9 +24,10 @@ import { AlterarSenhaDto } from './dto/alterar-senha.dto';
 import { RequireFeatures } from '../decorator/require-features.decorator';
 import { SaasFeature } from '../auth/saas-features.enum';
 import { SaasFeatureGuard } from '../guard/saas-feature.guard';
+import { TenantMatchGuard } from '../guard/tenant-match.guard';
 
 // 👉 ADICIONAMOS O GUARD DO SAAS AQUI
-@UseGuards(JwtAuthGuard, SaasFeatureGuard)
+@UseGuards(JwtAuthGuard, TenantMatchGuard, SaasFeatureGuard)
 @Controller('funcionarios')
 export class FuncionariosController {
     constructor(private readonly funcionariosService: FuncionariosService) { }
@@ -127,6 +131,24 @@ export class FuncionariosController {
             throw new ForbiddenException('Acesso restrito a profissionais.');
         }
         return this.funcionariosService.alterarSenha(tenantId, usuarioLogado.id, dto.senhaAtual, dto.novaSenha);
+    }
+
+    // =========================================================================
+    // FOTO + BIO PRA VITRINE PÚBLICA (Apenas Admins/Donos)
+    // =========================================================================
+    @Patch(':id/vitrine')
+    @UseInterceptors(FileInterceptor('foto'))
+    async atualizarVitrine(
+        @TenantId() tenantId: string,
+        @CurrentUser() usuarioLogado: any,
+        @Param('id') id: string,
+        @Body() dados: { descricao?: string },
+        @UploadedFile() foto?: Express.Multer.File,
+    ) {
+        if (usuarioLogado.role !== 1) {
+            throw new ForbiddenException('Apenas administradores podem editar a vitrine da equipe.');
+        }
+        return this.funcionariosService.atualizarVitrine(tenantId, Number(id), dados, foto);
     }
 
     @Get(':id/horarios')

@@ -2,6 +2,7 @@ import { Controller, Post, Get, Body, UseGuards } from '@nestjs/common';
 import { PortalClienteService } from './portal-cliente.service';
 import { TenantId } from '../tenant/tenant.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { TenantMatchGuard } from '../guard/tenant-match.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { IsPublic } from '../decorator/public.decorator';
 
@@ -27,7 +28,7 @@ export class PortalClienteController {
         return this.portalClienteService.loginCliente(tenantId, body.email, body.senha);
     }
 
-    @UseGuards(JwtAuthGuard) // Exige que o cliente esteja logado
+    @UseGuards(JwtAuthGuard, TenantMatchGuard) // Exige que o cliente esteja logado NO tenant certo
     @Get('perfil')
     async obterMeuPerfil(
         @TenantId() tenantId: string,

@@ -17,6 +17,7 @@ export class TenantMiddleware implements NestMiddleware {
     const rotasPublicas = [
       '/tenant/info',
       '/tenants/info',
+      '/tenants/vitrine',
       '/tenants/registrar-loja',
       '/auth/'
     ];

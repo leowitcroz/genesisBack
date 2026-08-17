@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ExpenseType, PlanoSaaS } from '@prisma/client';
+import { ComissoesService } from '../comissoes/comissoes.service';
 
 const RECEITA_POR_PLANO_VAZIA = (): Record<PlanoSaaS, number> => ({
     BASICO: 0, INTERMEDIARIO_VENDAS: 0, INTERMEDIARIO_AGENDA: 0, PRO: 0, ENTERPRISE: 0,
@@ -16,7 +17,10 @@ const ASSINATURAS_ATIVAS_VAZIA = (): Record<PlanoSaaS, { qtd: number; valor: num
 
 @Injectable()
 export class FinanceiroService {
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly comissoesService: ComissoesService,
+    ) { }
 
     private normalizarDataParaMeioDia(dataInput: string | Date): Date {
         const data = new Date(dataInput);
@@ -461,6 +465,10 @@ export class FinanceiroService {
             return { id: `manual-${e.id}`, description: e.description, amount: valor, date: e.date, tipo: 'ENTRADA_MANUAL', isPaid: e.isPaid };
         });
 
+        // 4.5 Comissões da equipe no período (usando a regra que a loja configurou)
+        const relatorioEquipe = await this.obterRelatorioEquipe(tenantId, dataInicioReal, dataFimReal);
+        const totalComissoesPeriodo = relatorioEquipe.reduce((acc, f) => acc + (Number(f.comissaoTotal) || 0), 0);
+
         // 5. Consolidado Final
         const totalVendasGeral = totalProdutos + totalBebidas;
         const totalEntradasReal = totalAgendamentos + totalVendasGeral + totalEntradasManuaisPagas;
@@ -489,7 +497,7 @@ export class FinanceiroService {
                     lista: despesas
                 },
                 entradas: { lista: listaCompletaEntradas }, // 👈 Lista completa unificada
-                totalComissoes: { total: 0 }
+                totalComissoes: { total: totalComissoesPeriodo }
             },
             lucroLiquidoReal: totalEntradasReal - despesasPagas
         };
@@ -579,17 +587,67 @@ export class FinanceiroService {
         };
     }
 
+    // 👉 FONTE ÚNICA DE VERDADE: usada tanto pelo relatório do dono (todos os
+    // funcionários) quanto pelo resumo financeiro geral (soma de todas as comissões
+    // do período) — garante que os números batem nos dois lados sempre, porque é
+    // literalmente o mesmo cálculo rodando.
     async obterRelatorioEquipe(tenantId: string, startDate: Date, endDate: Date) {
+        // Regra de comissão que a própria loja configurou (% produto, % consumível,
+        // % serviço avulso, e valor fixo por serviço coberto por plano).
+        const regra = await this.comissoesService.obterRegra(tenantId);
+        const percProduto = Number(regra.percentualProduto) / 100;
+        const percConsumivel = Number(regra.percentualConsumivel) / 100;
+        const percAvulso = Number(regra.percentualAvulso) / 100;
+        const valorFixoPlano = Number(regra.valorFixoPlano);
+
         const funcionarios = await this.prisma.funcionario.findMany({ where: { tenantId, ativo: true } });
         const relatorio = await Promise.all(funcionarios.map(async (func) => {
-            const agendamentos = await this.prisma.agendamento.aggregate({
-                where: { tenantId, funcionarioId: func.id, status: 'concluido', horario: { data: { gte: startDate, lte: endDate } } },
-                _count: { id: true }, _sum: { valor: true }
+            const agendamentos = await this.prisma.agendamento.findMany({
+                where: { tenantId, funcionarioId: func.id, status: 'concluido', horario: { data: { gte: startDate, lte: endDate } } }
             });
+
+            const vendas = await this.prisma.itemVenda.findMany({
+                where: { tenantId, funcionarioId: func.id, dataVenda: { gte: startDate, lte: endDate } }
+            });
+
+            // Vendas: comissão separada por produto x consumível/bebida
+            let comissaoProdutos = 0, comissaoBebidas = 0;
+            vendas.forEach(v => {
+                const valorVenda = Number(v.valorUnitario) * v.quantidade;
+                if (v.tipoOrigem === 'CONSUMIVEL') {
+                    comissaoBebidas += valorVenda * percConsumivel;
+                } else {
+                    comissaoProdutos += valorVenda * percProduto;
+                }
+            });
+
+            // Serviços: comissão % sobre o que foi cobrado fora do plano (avulso ou a
+            // parte não coberta de um misto) + valor fixo por serviço que saiu pelo
+            // plano (creditosGastos conta certinho quantos créditos foram consumidos
+            // nesse agendamento).
+            let totalFaturamento = 0;
+            let totalServicosPlano = 0;
+            agendamentos.forEach(ag => {
+                totalFaturamento += Number(ag.valor) || 0;
+                totalServicosPlano += ag.creditosGastos || 0;
+            });
+
+            const comissaoServicosAvulsos = totalFaturamento * percAvulso;
+            const comissaoServicosPlano = totalServicosPlano * valorFixoPlano;
+            const comissaoTotal = comissaoServicosAvulsos + comissaoServicosPlano + comissaoProdutos + comissaoBebidas;
+
             return {
                 barbeiroId: func.id, nomeBarbeiro: func.nome,
-                totalServicosRealizados: agendamentos._count.id || 0,
-                totalFaturamento: agendamentos._sum.valor || 0
+                totalServicosRealizados: agendamentos.length,
+                totalFaturamento,
+                comissaoTotal,
+                comissao: {
+                    servicosAvulsos: comissaoServicosAvulsos,
+                    servicosPlano: comissaoServicosPlano,
+                    produtos: comissaoProdutos,
+                    bebidas: comissaoBebidas,
+                    total: comissaoTotal
+                }
             };
         }));
         return relatorio.sort((a, b) => b.totalServicosRealizados - a.totalServicosRealizados);

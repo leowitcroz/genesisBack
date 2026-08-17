@@ -25,7 +25,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         if (!cliente) throw new UnauthorizedException('Cliente não encontrado.');
         
         // Retorna o payload para o @CurrentUser() usar
-        return { sub: payload.sub, email: payload.email, role: payload.role, userType: 'CLIENTE' };
+        // tenantId precisa vir junto — é o que o TenantMatchGuard usa pra garantir
+        // que o token de um cliente da Loja A não é aceito com o header da Loja B.
+        return { sub: payload.sub, email: payload.email, role: payload.role, userType: 'CLIENTE', tenantId: payload.tenantId };
     }
 
     return { 

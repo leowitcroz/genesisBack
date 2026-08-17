@@ -20,6 +20,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RequireFeatures } from '../decorator/require-features.decorator';
 import { SaasFeature } from '../auth/saas-features.enum';
 import { SaasFeatureGuard } from '../guard/saas-feature.guard';
+import { TenantMatchGuard } from '../guard/tenant-match.guard';
 
 // Importe seus DTOs aqui
 // import { CriarContaClienteDto } from './dto/criar-conta-cliente.dto';
@@ -27,7 +28,7 @@ import { SaasFeatureGuard } from '../guard/saas-feature.guard';
 // import { AtualizarClienteDto } from './dto/atualizar-cliente.dto';
 
 // 👉 ADICIONAMOS O GUARD DO SAAS AQUI (Ele vai interceptar tudo e ler os decorators)
-@UseGuards(JwtAuthGuard, SaasFeatureGuard)
+@UseGuards(JwtAuthGuard, TenantMatchGuard, SaasFeatureGuard)
 @Controller('clientes')
 export class ClientesController {
   constructor(private readonly clientesService: ClientesService) {}

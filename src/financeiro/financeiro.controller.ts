@@ -16,10 +16,11 @@ import { TenantId } from '../tenant/tenant.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { SaasFeatureGuard } from '../guard/saas-feature.guard';
+import { TenantMatchGuard } from '../guard/tenant-match.guard';
 import { RequireFeatures } from '../decorator/require-features.decorator';
 import { SaasFeature } from '../auth/saas-features.enum';
 
-@UseGuards(JwtAuthGuard, SaasFeatureGuard)
+@UseGuards(JwtAuthGuard, TenantMatchGuard, SaasFeatureGuard)
 @RequireFeatures(SaasFeature.FINANCEIRO) // <-- BLINDAGEM TOTAL DO ARQUIVO!
 @Controller('financeiro')
 export class FinanceiroController {
@@ -56,8 +57,15 @@ export class FinanceiroController {
     ) {
         this.validarAdmin(usuario);
         if (!inicio || !fim) throw new BadRequestException('Datas de início e fim são obrigatórias');
-        
-        return this.financeiroService.obterRelatorioEquipe(tenantId, new Date(inicio), new Date(fim));
+
+        // Sem o horário, "fim" vira meia-noite UTC — corta fora o dia inteiro em
+        // qualquer fuso atrás de UTC (ex: agendamento das 10h vira 13h UTC, que já
+        // é "depois" da meia-noite do dia seguinte). Mesmo ajuste do /resumo.
+        return this.financeiroService.obterRelatorioEquipe(
+            tenantId,
+            new Date(inicio + 'T00:00:00-03:00'),
+            new Date(fim + 'T23:59:59-03:00')
+        );
     }
 
     // =========================================================================
@@ -72,8 +80,12 @@ export class FinanceiroController {
     ) {
         this.validarAdmin(usuario);
         if (!inicio || !fim) throw new BadRequestException('Datas de início e fim são obrigatórias');
-        
-        return this.financeiroService.obterResumoFinanceiroSaaS(tenantId, new Date(inicio), new Date(fim));
+
+        return this.financeiroService.obterResumoFinanceiroSaaS(
+            tenantId,
+            new Date(inicio + 'T00:00:00-03:00'),
+            new Date(fim + 'T23:59:59-03:00')
+        );
     }
 
     @Get('saas/lojas')

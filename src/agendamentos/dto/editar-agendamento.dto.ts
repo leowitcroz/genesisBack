@@ -1,4 +1,4 @@
-import { IsOptional, IsInt, IsArray, IsEnum, IsBoolean, IsString } from 'class-validator';
+import { IsOptional, IsInt, IsArray, IsEnum, IsBoolean, IsString, IsNumber, Min } from 'class-validator';
 import { FormaPagamento } from '@prisma/client';
 
 export class EditarAgendamentoDto {
@@ -30,5 +30,12 @@ export class EditarAgendamentoDto {
     // 👇 Campo adicionado para permitir a conclusão
     @IsOptional()
     @IsString()
-    status?: string; 
+    status?: string;
+
+    // Sobrescreve o valor calculado pelo catálogo — para serviços de preço variável
+    // (ex: dentista, onde limpeza/molde mudam de caso a caso)
+    @IsOptional()
+    @IsNumber()
+    @Min(0)
+    valorServico?: number;
 }

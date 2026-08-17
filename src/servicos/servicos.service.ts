@@ -1,9 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
 @Injectable()
 export class ServicosService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cloudinaryService: CloudinaryService,
+  ) {}
 
   // =========================================================================
   // CRIAR NOVO SERVIÇO
@@ -69,5 +73,25 @@ export class ServicosService {
     });
 
     return { message: 'Serviço excluído com sucesso.' };
+  }
+
+  // Foto + descrição exibidas no card do serviço na vitrine pública da loja.
+  async atualizarVitrine(tenantId: string, id: number, dados: { descricao?: string }, foto?: Express.Multer.File) {
+    const servico = await this.prisma.servico.findFirst({ where: { id, tenantId } });
+    if (!servico) {
+      throw new NotFoundException('Serviço não encontrado ou não pertence a este estabelecimento.');
+    }
+
+    const fotoUrl = foto
+      ? await this.cloudinaryService.uploadImagem(foto.buffer, `wsdigital/${tenantId}/servicos`)
+      : undefined;
+
+    return this.prisma.servico.update({
+      where: { id },
+      data: {
+        ...(dados.descricao !== undefined && { descricao: dados.descricao || null }),
+        ...(fotoUrl !== undefined && { fotoUrl }),
+      },
+    });
   }
 }

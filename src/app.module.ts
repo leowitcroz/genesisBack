@@ -14,6 +14,7 @@ import { AdmModule } from './adm/adm.module';
 import { PortalClienteModule } from './portal-cliente/portal-cliente.module';
 import { ServicosModule } from './servicos/servicos.module';
 import { ProdutosModule } from './produtos/produtos.module';
+import { ComissoesModule } from './comissoes/comissoes.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { ProdutosModule } from './produtos/produtos.module';
     PortalClienteModule,
     ServicosModule,
     ProdutosModule,
+    ComissoesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
