@@ -26,4 +26,8 @@ export class CriarAgendamentoDto {
   @IsBoolean()
   @IsOptional()
   cupomAplicado?: boolean;
+
+  @IsString()
+  @IsOptional()
+  observacoes?: string;
 }

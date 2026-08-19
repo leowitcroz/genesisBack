@@ -38,4 +38,10 @@ export class EditarAgendamentoDto {
     @IsNumber()
     @Min(0)
     valorServico?: number;
+
+    // Notas do estabelecimento sobre esse agendamento/cliente (preferências,
+    // alergias, combinados anteriores etc.)
+    @IsOptional()
+    @IsString()
+    observacoes?: string;
 }

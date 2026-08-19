@@ -23,6 +23,7 @@ export class AgendamentosService {
     servicoIds: number[];
     formaPagamento: FormaPagamento;
     cupomAplicado?: boolean;
+    observacoes?: string;
   }) {
     return await this.prisma.$transaction(async (tx) => {
 
@@ -121,6 +122,7 @@ export class AgendamentosService {
           tipo: tipoAgendamento,
           formaPagamento: data.formaPagamento,
           cupom: data.cupomAplicado || false,
+          observacoes: data.observacoes || null,
           status: 'agendado'
         }
       });
@@ -231,6 +233,7 @@ export class AgendamentosService {
     cupomAplicado: boolean;
     status?: string;
     valorServico: number;
+    observacoes: string;
   }>) {
     return await this.prisma.$transaction(async (tx) => {
       // 1. BUSCA O ESTADO ATUAL (Essencial para o estorno)
@@ -381,6 +384,7 @@ export class AgendamentosService {
           tipo: novoTipo,
           formaPagamento: formaPagamentoEfetiva,
           cupom: cupomEfetivo,
+          ...(data.observacoes !== undefined && { observacoes: data.observacoes || null }),
           status: 'agendado'
         }
       });
