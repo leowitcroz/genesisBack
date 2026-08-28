@@ -13,9 +13,13 @@ async function bootstrap() {
 
   app.enableCors({
     origin: [
-      'http://localhost:5173', 
-      'http://localhost:5174', 
+      'http://localhost:5173',
+      'http://localhost:5174',
+      'https://localhost:5173',
       /^http:\/\/(.*)\.localhost:5173$/,
+      // 👇 Versão HTTPS do dev local — o Embedded Signup da Meta exige HTTPS
+      // até em localhost, então o Vite passou a servir o frontend assim.
+      /^https:\/\/(.*)\.localhost:5173$/,
       /^https:\/\/(.*)\.genesis\.com$/,
       // 👇 Adicionado o domínio principal e subdomínios da wsdigital
       'https://wsdigital.app.br',

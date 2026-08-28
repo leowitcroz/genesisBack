@@ -76,6 +76,9 @@ model Tenant {
   entradas Entrada[]
   centrosCusto CentroCusto[]
   regraComissao RegraComissao?
+  whatsappConexao TenantWhatsapp?
+  whatsappLogs WhatsappEnvioLog[]
+  faturasAssinatura FaturaAssinatura[]
 }
 
 // Regras de comissão que a própria loja configura pros funcionários dela.
@@ -90,6 +93,90 @@ model RegraComissao {
 
   tenantId String @unique
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// Conexão do WhatsApp Business (Meta Cloud API) de CADA loja — cada tenant
+// conecta o próprio número via Embedded Signup, não um número único da
+// plataforma. Não confundir com `Tenant.whatsapp`, que é só o número exibido
+// no botão "Falar no WhatsApp" da vitrine pública (texto livre, sem API).
+model TenantWhatsapp {
+  id                       Int      @id @default(autoincrement())
+  tenantId                 String   @unique
+  tenant                   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  status                   WhatsappConnectionStatus @default(DESCONECTADO)
+  wabaId                   String?  @db.VarChar(50) // WhatsApp Business Account ID (Meta)
+  phoneNumberId            String?  @db.VarChar(50) // Cloud API phone_number_id usado pra enviar
+  numeroExibicao           String?  @db.VarChar(20)
+  accessTokenCriptografado String?  @db.Text // token de longa duração, criptografado em app (WHATSAPP_TOKEN_ENC_KEY)
+  conectadoEm              DateTime?
+  ultimoErro               String?  @db.Text
+  // Começa true por padrão — nenhuma loja manda mensagem real sem alguém
+  // deliberadamente desligar isso depois de já ter conectado de verdade.
+  modoSimulado             Boolean  @default(true)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  templates                TenantWhatsappTemplate[]
+}
+
+enum WhatsappConnectionStatus {
+  DESCONECTADO
+  CONECTADO
+  ERRO
+}
+
+// Status de aprovação de cada template de mensagem (Meta exige pré-aprovação
+// de qualquer mensagem iniciada pela empresa fora da janela de 24h de
+// conversa). Uma linha por tipo de mensagem, por loja.
+model TenantWhatsappTemplate {
+  id                     Int      @id @default(autoincrement())
+  tenantWhatsappId       Int
+  tenantWhatsapp         TenantWhatsapp @relation(fields: [tenantWhatsappId], references: [id], onDelete: Cascade)
+
+  tipo                   WhatsappTemplateTipo
+  nomeMeta               String   @db.VarChar(100) // nome exato registrado na Meta, ex: "confirmacao_agendamento_v1"
+  status                 WhatsappTemplateStatus @default(NAO_ENVIADO)
+  motivoRejeicao         String?  @db.Text
+  aprovadoEm             DateTime?
+  updatedAt              DateTime @updatedAt
+
+  @@unique([tenantWhatsappId, tipo])
+}
+
+enum WhatsappTemplateTipo {
+  CONFIRMACAO
+  VESPERA
+  DIA_DA
+  ANIVERSARIO
+}
+
+enum WhatsappTemplateStatus {
+  NAO_ENVIADO
+  PENDENTE
+  APROVADO
+  REJEITADO
+}
+
+// Histórico de todo envio (real ou simulado) — é o que deixa o modo simulado
+// verificável (mostra "o que teria sido mandado") e dá uma trilha de auditoria
+// quando for envio de verdade.
+model WhatsappEnvioLog {
+  id                 Int      @id @default(autoincrement())
+  tenantId           String
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  tipo               WhatsappTemplateTipo
+  destinatario       String   @db.VarChar(20)
+  clienteId          Int?
+  agendamentoId      Int?
+  simulado           Boolean  @default(true)
+  sucesso            Boolean  @default(true)
+  payloadRenderizado Json?
+  erro               String?  @db.Text
+  createdAt          DateTime @default(now())
+
+  @@index([tenantId, createdAt])
 }
 
 
@@ -202,6 +289,12 @@ model Cliente {
   role      Int      @default(1)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Usado pela mensagem automática de aniversário no WhatsApp.
+  dataNascimento              DateTime? @db.Date
+  // Guarda o ANO do último aniversário já avisado — evita reenviar no mesmo
+  // ano sem precisar de uma tabela extra só pra esse controle.
+  ultimoAnoAniversarioEnviado Int?
 
   tenantId String
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -328,6 +421,17 @@ model Agendamento {
   updatedAt      DateTime        @updatedAt
   creditosGastos Int             @default(0)
 
+  // Nota que vai DENTRO do texto da mensagem de confirmação no WhatsApp —
+  // diferente de `observacoes` (interna, só a equipe vê).
+  notaCliente     String? @db.VarChar(500)
+  // Telefone denormalizado pro envio de WhatsApp — mesmo motivo do
+  // `nomeCliente` acima: agendamento avulso não tem Cliente pra puxar telefone.
+  telefoneCliente String? @db.VarChar(20)
+
+  confirmacaoEnviadaEm     DateTime?
+  lembreteVesperaEnviadoEm DateTime?
+  lembreteDiaDaEnviadoEm   DateTime?
+
   tenantId String
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -375,7 +479,36 @@ model AssinaturaCliente {
   funcionarioId Int?
   funcionario   Funcionario? @relation(fields: [funcionarioId], references: [id])
 
+  // Dia fixo de cobrança mensal (5, 10, 15, 20 ou 25) — validado no DTO, não no banco.
+  diaVencimento Int @default(10)
+
   historicoRenovacao HistoricoRenovacao[]
+  faturas             FaturaAssinatura[]
+}
+
+// Fatura mensal cobrada do cliente final (diferente de FaturaSaaS, que é a
+// WsDigital cobrando o tenant). Gerada pelo cron no dia fixo de vencimento da
+// assinatura; pagamento é manual nesta entrega (ver marcarPago).
+model FaturaAssinatura {
+  id             String    @id @default(uuid())
+  valor          Decimal   @db.Decimal(10, 2)
+  status         String    @default("PENDENTE") // PENDENTE, PAGO, ATRASADO, CANCELADA
+  dataReferencia DateTime  // início do ciclo que esta fatura cobre
+  dataVencimento DateTime  // instância do dia fixo (5/10/15/20/25) deste ciclo
+  dataPagamento  DateTime?
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  assinaturaId Int
+  assinatura   AssinaturaCliente @relation(fields: [assinaturaId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([assinaturaId, dataVencimento])
+  @@index([tenantId])
+  @@index([assinaturaId])
 }
 
 // ==========================================

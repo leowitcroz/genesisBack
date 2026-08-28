@@ -1,20 +1,22 @@
-import { 
-  Controller, 
-  Get, 
-  Post, 
-  Patch, 
-  Delete, 
-  Body, 
-  Param, 
-  Query, 
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
   ParseIntPipe,
   HttpCode,
   HttpStatus,
-  UseGuards
+  UseGuards,
+  ForbiddenException
 } from '@nestjs/common';
 import { ClientesService } from './clientes.service';
 import { TenantId } from '../tenant/tenant.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
 
 // 👉 IMPORTS DA BLINDAGEM SAAS
 import { RequireFeatures } from '../decorator/require-features.decorator';
@@ -108,8 +110,16 @@ export class ClientesController {
   async atualizar(
     @TenantId() tenantId: string,
     @Param('id', ParseIntPipe) id: number,
-    @Body() dto: any 
+    @CurrentUser() usuarioLogado: any,
+    @Body() dto: any
   ) {
+    // Um cliente só pode editar o próprio cadastro (senão bastaria trocar o
+    // :id na URL pra editar o de qualquer outro). Funcionário da loja edita
+    // qualquer cliente do próprio tenant normalmente.
+    const ehCliente = usuarioLogado.userType === 'CLIENTE';
+    if (ehCliente && usuarioLogado.sub !== id) {
+      throw new ForbiddenException('Você só pode editar o seu próprio cadastro.');
+    }
     return this.clientesService.atualizar(tenantId, id, dto);
   }
 

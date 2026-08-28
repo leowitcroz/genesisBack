@@ -54,6 +54,7 @@ export class SaasFeatureGuard implements CanActivate {
           isAtivo = Boolean(tenant.moduloProdutos);
           break;
         case SaasFeature.ASSINATURAS:
+        case SaasFeature.PLANOS_CLIENTES:
           isAtivo = Boolean(tenant.moduloAssinaturas);
           break;
         case SaasFeature.PAGAMENTO_WEB:

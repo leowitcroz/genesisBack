@@ -15,6 +15,8 @@ import { PortalClienteModule } from './portal-cliente/portal-cliente.module';
 import { ServicosModule } from './servicos/servicos.module';
 import { ProdutosModule } from './produtos/produtos.module';
 import { ComissoesModule } from './comissoes/comissoes.module';
+import { WhatsappModule } from './whatsapp/whatsapp.module';
+import { PlanosClientesModule } from './planos-clientes/planos-clientes.module';
 
 @Module({
   imports: [
@@ -31,6 +33,8 @@ import { ComissoesModule } from './comissoes/comissoes.module';
     ServicosModule,
     ProdutosModule,
     ComissoesModule,
+    WhatsappModule,
+    PlanosClientesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -129,6 +129,7 @@ export class ClientesService {
                 nome: c.nome,
                 email: c.email,
                 telefone: c.telefone,
+                dataNascimento: c.dataNascimento,
                 assinatura: c.assinatura ? {
                     status: c.assinatura.status,
                     nomePlano: c.assinatura.plano.nome,
@@ -153,6 +154,7 @@ export class ClientesService {
                 nome: true,
                 email: true,
                 telefone: true,
+                dataNascimento: true,
                 role: true,
                 createdAt: true,
                 updatedAt: true,
@@ -220,6 +222,7 @@ export class ClientesService {
         telefone?: string;
         senhaAtual?: string;
         novaSenha?: string;
+        dataNascimento?: string;
     }) {
         const clienteAtual = await this.buscarPorId(tenantId, id);
 
@@ -238,6 +241,7 @@ export class ClientesService {
             ...(data.nome && { nome: data.nome }),
             ...(data.email && { email: data.email }),
             ...(data.telefone && { telefone: data.telefone }),
+            ...(data.dataNascimento && { dataNascimento: new Date(data.dataNascimento) }),
         };
 
         // Lógica de alteração de senha
@@ -259,7 +263,7 @@ export class ClientesService {
         const clienteAtualizado = await this.prisma.cliente.update({
             where: { id },
             data: dadosAtualizacao,
-            select: { id: true, nome: true, email: true, telefone: true } // Não retorna a senha
+            select: { id: true, nome: true, email: true, telefone: true, dataNascimento: true } // Não retorna a senha
         });
 
         return clienteAtualizado;

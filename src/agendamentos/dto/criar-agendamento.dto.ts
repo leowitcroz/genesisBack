@@ -10,6 +10,10 @@ export class CriarAgendamentoDto {
   @IsOptional()
   nomeClienteAvulso?: string;
 
+  @IsString()
+  @IsOptional()
+  telefoneClienteAvulso?: string;
+
   @IsNumber()
   funcionarioId: number;
 
@@ -30,4 +34,8 @@ export class CriarAgendamentoDto {
   @IsString()
   @IsOptional()
   observacoes?: string;
+
+  @IsString()
+  @IsOptional()
+  notaCliente?: string;
 }

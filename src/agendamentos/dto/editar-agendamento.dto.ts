@@ -40,8 +40,13 @@ export class EditarAgendamentoDto {
     valorServico?: number;
 
     // Notas do estabelecimento sobre esse agendamento/cliente (preferências,
-    // alergias, combinados anteriores etc.)
+    // alergias, combinados anteriores etc.) — interna, NÃO vai pro WhatsApp.
     @IsOptional()
     @IsString()
     observacoes?: string;
+
+    // Nota que VAI dentro do texto da mensagem de confirmação no WhatsApp.
+    @IsOptional()
+    @IsString()
+    notaCliente?: string;
 }

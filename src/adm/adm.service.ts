@@ -128,6 +128,7 @@ export class AdmService {
     moduloFinanceiro?: boolean; 
     moduloProdutos?: boolean;
     moduloVendas?: boolean;
+    moduloAssinaturas?: boolean;
     // 👇 Novos campos opcionais para o controle financeiro do Admin Master
     statusFinanceiro?: string; // Ex: 'ATIVO', 'PENDENTE', 'ATRASADO'
     gerarNovaFatura?: boolean; // Passar 'true' quando for uma renovação mensal
@@ -150,6 +151,7 @@ export class AdmService {
           ...(dadosPlano.moduloFinanceiro !== undefined && { moduloFinanceiro: dadosPlano.moduloFinanceiro }),
           ...(dadosPlano.moduloProdutos !== undefined && { moduloProdutos: dadosPlano.moduloProdutos }),
           ...(dadosPlano.moduloVendas !== undefined && { moduloVendas: dadosPlano.moduloVendas }),
+          ...(dadosPlano.moduloAssinaturas !== undefined && { moduloAssinaturas: dadosPlano.moduloAssinaturas }),
         },
       });
 

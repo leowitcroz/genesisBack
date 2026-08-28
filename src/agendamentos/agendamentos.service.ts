@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   ConflictException,
   BadRequestException,
@@ -7,10 +8,33 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FormaPagamento } from '@prisma/client';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 
 @Injectable()
 export class AgendamentosService {
-  constructor(private readonly prisma: PrismaService) { }
+  private readonly logger = new Logger(AgendamentosService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly whatsappService: WhatsappService,
+  ) { }
+
+  // Busca a assinatura ativa do cliente, mas suspende o BENEFÍCIO do plano
+  // (sem cancelar a assinatura em si) quando a fatura mais recente está
+  // ATRASADO — o agendamento continua acontecendo normalmente, só passa a
+  // cobrar o valor cheio do serviço em vez de gastar crédito, até o
+  // pagamento ser confirmado (que já reseta os créditos de novo).
+  private async buscarAssinaturaComBeneficio(tx: any, tenantId: string, clienteId: number) {
+    const assinatura = await tx.assinaturaCliente.findFirst({
+      where: { clienteId, tenantId, ativo: true, status: 'Ativo' },
+      include: { plano: true, faturas: { orderBy: { dataVencimento: 'desc' }, take: 1 } },
+    });
+
+    if (assinatura?.faturas?.[0]?.status === 'ATRASADO') {
+      return null;
+    }
+    return assinatura;
+  }
 
   // =========================================================================
   // 1. CRIAR AGENDAMENTO (Totalmente Genérico e Multi-Tenant)
@@ -18,12 +42,14 @@ export class AgendamentosService {
   async criar(tenantId: string, data: {
     clienteId?: number;
     nomeClienteAvulso?: string;
+    telefoneClienteAvulso?: string;
     funcionarioId: number;
     horarioId: number;
     servicoIds: number[];
     formaPagamento: FormaPagamento;
     cupomAplicado?: boolean;
     observacoes?: string;
+    notaCliente?: string;
   }) {
     return await this.prisma.$transaction(async (tx) => {
 
@@ -53,15 +79,14 @@ export class AgendamentosService {
 
       let assinaturaAtiva = null;
       let nomeDoCliente = data.nomeClienteAvulso || "Cliente Avulso";
+      let telefoneDoCliente = data.telefoneClienteAvulso || null;
 
       if (data.clienteId) {
         const cliente = await tx.cliente.findUnique({ where: { id: data.clienteId, tenantId } });
         if (cliente) {
           nomeDoCliente = cliente.nome;
-          assinaturaAtiva = await tx.assinaturaCliente.findFirst({
-            where: { clienteId: cliente.id, tenantId, ativo: true, status: 'Ativo' },
-            include: { plano: true }
-          });
+          telefoneDoCliente = cliente.telefone || telefoneDoCliente;
+          assinaturaAtiva = await this.buscarAssinaturaComBeneficio(tx, tenantId, cliente.id);
         }
       }
 
@@ -123,6 +148,8 @@ export class AgendamentosService {
           formaPagamento: data.formaPagamento,
           cupom: data.cupomAplicado || false,
           observacoes: data.observacoes || null,
+          notaCliente: data.notaCliente || null,
+          telefoneCliente: telefoneDoCliente,
           status: 'agendado'
         }
       });
@@ -137,7 +164,45 @@ export class AgendamentosService {
       }
 
       return agendamento;
+    }).then((agendamentoCriado) => {
+      // Fora da transação de propósito: uma falha de rede no envio do WhatsApp
+      // nunca pode atrasar nem derrubar a confirmação do agendamento em si.
+      // Não é "await"ado — dispara em segundo plano e só loga se der erro.
+      this.dispararConfirmacaoWhatsapp(tenantId, agendamentoCriado.id)
+        .catch((erro) => this.logger.error(`Falha ao enviar confirmação WhatsApp do agendamento ${agendamentoCriado.id}`, erro));
+      return agendamentoCriado;
     });
+  }
+
+  private async dispararConfirmacaoWhatsapp(tenantId: string, agendamentoId: number) {
+    const agendamento = await this.prisma.agendamento.findUnique({
+      where: { id: agendamentoId },
+      include: { horario: true, cliente: true, tenant: true },
+    });
+    if (!agendamento?.telefoneCliente) return;
+
+    const resultado = await this.whatsappService.enviarTemplate({
+      tenantId,
+      tipo: 'CONFIRMACAO',
+      telefoneDestino: agendamento.telefoneCliente,
+      variaveis: {
+        nomeCliente: agendamento.cliente?.nome || agendamento.nomeCliente || 'cliente',
+        nomeNegocio: agendamento.tenant.nomeNegocio,
+        data: new Date(agendamento.horario.data).toLocaleDateString('pt-BR', { timeZone: 'UTC' }),
+        hora: agendamento.horario.horaInicio,
+        servico: agendamento.servico,
+        notaClienteFormatada: agendamento.notaCliente ? ` Obs: ${agendamento.notaCliente}` : '',
+      },
+      clienteId: agendamento.clienteId ?? undefined,
+      agendamentoId: agendamento.id,
+    });
+
+    if (resultado.enviado) {
+      await this.prisma.agendamento.update({
+        where: { id: agendamentoId },
+        data: { confirmacaoEnviadaEm: new Date() },
+      });
+    }
   }
 
   // =========================================================================
@@ -234,6 +299,7 @@ export class AgendamentosService {
     status?: string;
     valorServico: number;
     observacoes: string;
+    notaCliente: string;
   }>) {
     return await this.prisma.$transaction(async (tx) => {
       // 1. BUSCA O ESTADO ATUAL (Essencial para o estorno)
@@ -316,10 +382,7 @@ export class AgendamentosService {
       // 5. LÓGICA DE PRECIFICAÇÃO INTELIGENTE (Prioridade para o maior valor)
       let assinaturaAtiva = null;
       if (clienteIdEfetivo) {
-        assinaturaAtiva = await tx.assinaturaCliente.findFirst({
-          where: { clienteId: clienteIdEfetivo, tenantId, ativo: true, status: 'Ativo' },
-          include: { plano: true }
-        });
+        assinaturaAtiva = await this.buscarAssinaturaComBeneficio(tx, tenantId, clienteIdEfetivo);
       }
 
       const servicosCobertosPeloPlano = [];
@@ -385,6 +448,7 @@ export class AgendamentosService {
           formaPagamento: formaPagamentoEfetiva,
           cupom: cupomEfetivo,
           ...(data.observacoes !== undefined && { observacoes: data.observacoes || null }),
+          ...(data.notaCliente !== undefined && { notaCliente: data.notaCliente || null }),
           status: 'agendado'
         }
       });

@@ -34,7 +34,7 @@ export class AdmController {
   @Patch('tenants/:id/plano')
   async atualizarPlano(
     @Param('id') id: string,
-    @Body() body: { planoSaaS: PlanoSaaS; moduloAgendamento: boolean; moduloFinanceiro: boolean; moduloProdutos: boolean; moduloVendas: boolean }
+    @Body() body: { planoSaaS: PlanoSaaS; moduloAgendamento: boolean; moduloFinanceiro: boolean; moduloProdutos: boolean; moduloVendas: boolean; moduloAssinaturas?: boolean }
   ) {
     return this.admService.atualizarPlanoLoja(id, body);
   }

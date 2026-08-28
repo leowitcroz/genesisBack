@@ -469,12 +469,23 @@ export class FinanceiroService {
         const relatorioEquipe = await this.obterRelatorioEquipe(tenantId, dataInicioReal, dataFimReal);
         const totalComissoesPeriodo = relatorioEquipe.reduce((acc, f) => acc + (Number(f.comissaoTotal) || 0), 0);
 
+        // 4.6 Assinaturas de planos de clientes pagas no período
+        const faturasAssinaturaPagas = await this.prisma.faturaAssinatura.findMany({
+            where: { tenantId, status: 'PAGO', dataPagamento: { gte: dataInicioReal, lte: dataFimReal } }
+        });
+        let totalPlanos = 0;
+        const listaPlanosFormatada = faturasAssinaturaPagas.map(f => {
+            const valor = Number(f.valor) || 0;
+            totalPlanos += valor;
+            return { id: `plano-${f.id}`, description: 'Assinatura de Plano', amount: valor, date: f.dataPagamento, tipo: 'PLANO_ASSINATURA', isPaid: true };
+        });
+
         // 5. Consolidado Final
         const totalVendasGeral = totalProdutos + totalBebidas;
-        const totalEntradasReal = totalAgendamentos + totalVendasGeral + totalEntradasManuaisPagas;
+        const totalEntradasReal = totalAgendamentos + totalVendasGeral + totalEntradasManuaisPagas + totalPlanos;
 
         // Unifica tudo na lista de entradas para o front exibir
-        const listaCompletaEntradas = [...listaAgendamentos, ...listaVendasFormatada, ...listaManuaisFormatada]
+        const listaCompletaEntradas = [...listaAgendamentos, ...listaVendasFormatada, ...listaManuaisFormatada, ...listaPlanosFormatada]
             .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
         return {
@@ -483,7 +494,7 @@ export class FinanceiroService {
                     receitaBrutaTotal: totalEntradasReal,
                     avulsos: totalAgendamentos,
                     produtos: totalProdutos,
-                    planos: 0,
+                    planos: totalPlanos,
                     bebidas: totalBebidas,
                     manuais: totalEntradasManuaisPagas,
                     pendentesAReceber: totalEntradasManuaisPendentes

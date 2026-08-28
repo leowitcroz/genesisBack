@@ -40,6 +40,7 @@ export class PortalClienteService {
                 email: dados.email,
                 telefone: dados.telefone,
                 senha: senhaHasheada,
+                dataNascimento: dados.dataNascimento ? new Date(dados.dataNascimento) : null,
                 role: 1 // Role padrão de cliente final
             }
         });
@@ -88,9 +89,13 @@ export class PortalClienteService {
                         horario: true
                     }
                 },
-                // Traz a assinatura ativa dele (se tiver)
+                // Traz a assinatura ativa dele (se tiver), com a fatura mais
+                // recente pra mostrar vencimento/status de pagamento no perfil
                 assinatura: {
-                    include: { plano: true }
+                    include: {
+                        plano: true,
+                        faturas: { orderBy: { dataVencimento: 'desc' }, take: 1 }
+                    }
                 }
             }
         });
