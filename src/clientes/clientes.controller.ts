@@ -14,6 +14,7 @@ import {
   ForbiddenException
 } from '@nestjs/common';
 import { ClientesService } from './clientes.service';
+import { CriarClienteRapidoDto } from './dto/criar-cliente-rapido.dto';
 import { TenantId } from '../tenant/tenant.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -54,7 +55,7 @@ export class ClientesController {
   @Post('rapido')
   async criarSemCadastro(
     @TenantId() tenantId: string,
-    @Body() dto: any 
+    @Body() dto: CriarClienteRapidoDto
   ) {
     return this.clientesService.criarSemCadastro(tenantId, dto);
   }

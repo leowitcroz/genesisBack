@@ -57,10 +57,21 @@ export class ClientesService {
     }
 
     // =========================================================================
-    // 1. CRIAÇÃO RÁPIDA (SEM LOGIN/SENHA)
-    // Usado quando o recepcionista cadastra o cliente na hora
+    // 1. CRIAÇÃO RÁPIDA (SENHA PADRÃO)
+    // Usado quando o recepcionista cadastra o cliente na hora — ex: pra
+    // conseguir assinar um plano pra alguém que ainda não tem conta. Sai com
+    // a senha padrão abaixo; o cliente troca depois pelo próprio perfil.
     // =========================================================================
-    async criarSemCadastro(tenantId: string, data: { nome: string; telefone: string; email?: string }) {
+    private static readonly SENHA_PADRAO_CADASTRO_RAPIDO = '123';
+
+    async criarSemCadastro(tenantId: string, data: { nome: string; email: string; telefone?: string }) {
+        const emailEmUso = await this.prisma.cliente.findFirst({
+            where: { email: data.email, tenantId }
+        });
+        if (emailEmUso) {
+            throw new ConflictException('Este e-mail já está cadastrado para outro cliente neste estabelecimento.');
+        }
+
         // Valida se já existe alguém com esse telefone neste negócio específico
         if (data.telefone) {
             const telefoneEmUso = await this.prisma.cliente.findFirst({
@@ -72,13 +83,15 @@ export class ClientesService {
             }
         }
 
+        const senhaHasheada = await bcrypt.hash(ClientesService.SENHA_PADRAO_CADASTRO_RAPIDO, 10);
+
         return await this.prisma.cliente.create({
             data: {
                 tenantId,
                 nome: data.nome,
-                telefone: data.telefone,
-                email: data.email || null,
-                // Senha fica nula/vazia pois foi cadastrado manualmente
+                telefone: data.telefone || null,
+                email: data.email,
+                senha: senhaHasheada,
             },
             select: { id: true, nome: true, telefone: true, email: true }
         });
