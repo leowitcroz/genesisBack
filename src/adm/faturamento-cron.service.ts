@@ -3,6 +3,10 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { VALOR_PADRAO_PLANO } from './planos.constants';
 
+// A loja do dono da plataforma (WsDigital) não é cliente pagante: nunca gera
+// fatura nem é bloqueada por inadimplência.
+const SEM_LOJA_DO_DONO_DA_PLATAFORMA = { funcionarios: { none: { isPlatformOwner: true } } };
+
 // =========================================================================
 // ROTINA DIÁRIA DE COBRANÇA DO SAAS
 // Ciclo de vida de uma loja:
@@ -27,7 +31,7 @@ export class FaturamentoCronService {
     const hoje = new Date();
 
     const tenantsAtivos = await this.prisma.tenant.findMany({
-      where: { ativo: true },
+      where: { ativo: true, ...SEM_LOJA_DO_DONO_DA_PLATAFORMA },
       include: { faturasSaaS: { orderBy: { createdAt: 'desc' }, take: 1 } }
     });
 
@@ -62,7 +66,7 @@ export class FaturamentoCronService {
     seteDiasAtras.setDate(seteDiasAtras.getDate() - 7);
 
     const tenantsAtivos = await this.prisma.tenant.findMany({
-      where: { ativo: true },
+      where: { ativo: true, ...SEM_LOJA_DO_DONO_DA_PLATAFORMA },
       include: { faturasSaaS: { orderBy: { createdAt: 'desc' }, take: 1 } }
     });
 

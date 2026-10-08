@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PlanoSaaS } from '@prisma/client';
 import { NOME_PADRAO_PLANO, VALOR_PADRAO_PLANO } from './planos.constants';
@@ -245,6 +245,16 @@ export class AdmService {
     const lojaExiste = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
     if (!lojaExiste) {
       throw new NotFoundException('Estabelecimento não encontrado no sistema.');
+    }
+
+    if (!status) {
+      const ehLojaDoDono = await this.prisma.funcionario.findFirst({
+        where: { tenantId, isPlatformOwner: true },
+        select: { id: true },
+      });
+      if (ehLojaDoDono) {
+        throw new BadRequestException('A loja do dono da plataforma não pode ser bloqueada.');
+      }
     }
 
     return this.prisma.tenant.update({

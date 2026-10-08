@@ -41,8 +41,21 @@ export class TenantMiddleware implements NestMiddleware {
     });
 
     // 5. Valida se o cliente existe e se não está com a conta bloqueada/inativa
-    if (!tenant || !tenant.ativo) {
+    if (!tenant) {
       throw new NotFoundException('Negócio não encontrado ou inativo.');
+    }
+
+    if (!tenant.ativo) {
+      // A loja do dono da plataforma nunca fica bloqueada — se algo a
+      // desativou, reativa na hora em vez de trancar o ADM fora do sistema.
+      const ehLojaDoDono = await this.prisma.funcionario.findFirst({
+        where: { tenantId: tenant.id, isPlatformOwner: true },
+        select: { id: true },
+      });
+      if (!ehLojaDoDono) {
+        throw new NotFoundException('Negócio não encontrado ou inativo.');
+      }
+      await this.prisma.tenant.update({ where: { id: tenant.id }, data: { ativo: true } });
     }
 
     // 6. Injeta o ID real (UUID) do Tenant na requisição para os Controllers usarem
